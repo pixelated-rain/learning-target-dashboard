@@ -7,15 +7,15 @@ import {
 import '@xyflow/react/dist/style.css'
 import {
   SmartEdgeProvider,
-  SmartBezierEdge,
+  SmartSmoothStepEdge,
 } from '@tisoap/react-flow-smart-edge'
-import { layoutStressCourse as course } from './courses/layoutStressCourse'
+import { math1310Course as course } from './courses/math1310Course'
 import { simpleLayout } from './graph/simpleLayout'
 
 const layout = simpleLayout(course.targets)
 
 const edgeTypes = {
-  smart: SmartBezierEdge,
+  smart: SmartSmoothStepEdge,
 }
 
 const initialNodes = course.targets.map((target) => ({
