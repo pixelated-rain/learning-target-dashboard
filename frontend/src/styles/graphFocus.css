@@ -1,0 +1,67 @@
+:root {
+  --graph-background: #1e1e2e;
+  --graph-card: #313244;
+  --graph-text: #cdd6f4;
+  --graph-border: #585b70;
+  --graph-edge: #6c7086;
+
+  --graph-prerequisite: #a6e3a1;
+  --graph-postrequisite: #89b4fa;
+  --graph-active: #cba6f7;
+}
+
+.react-flow {
+  background: var(--graph-background);
+}
+
+.react-flow .react-flow__node.target-node {
+  background: var(--graph-card);
+  color: var(--graph-text);
+  border-color: var(--graph-border);
+}
+
+.react-flow .react-flow__node.target-node a {
+  color: var(--graph-postrequisite);
+}
+
+/*
+ * React Flow gives its default nodes their own hover/selected box shadows.
+ * These selectors are intentionally more specific so our semantic relation
+ * auras remain visible while a node is hovered or selected.
+ */
+.react-flow .react-flow__node.target-node.target-node--none,
+.react-flow .react-flow__node.target-node.target-node--active,
+.react-flow .react-flow__node.target-node.target-node--prerequisite,
+.react-flow .react-flow__node.target-node.target-node--postrequisite {
+  transition:
+    box-shadow 140ms ease,
+    filter 140ms ease;
+}
+
+.react-flow .react-flow__node.target-node.target-node--active {
+  box-shadow:
+    0 0 0 3px rgb(203 166 247 / 28%),
+    0 0 28px rgb(203 166 247 / 42%);
+  filter: brightness(1.05);
+}
+
+.react-flow .react-flow__node.target-node.target-node--prerequisite {
+  box-shadow:
+    0 0 0 2px rgb(166 227 161 / 24%),
+    0 0 22px rgb(166 227 161 / 32%);
+}
+
+.react-flow .react-flow__node.target-node.target-node--postrequisite {
+  box-shadow:
+    0 0 0 2px rgb(137 180 250 / 24%),
+    0 0 22px rgb(137 180 250 / 32%);
+}
+
+.graph-root--reduced-motion .react-flow__node.target-node {
+  transition: none;
+}
+
+.react-flow__handle {
+  opacity: 0;
+  pointer-events: none;
+}
