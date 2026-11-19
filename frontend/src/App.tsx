@@ -5,17 +5,15 @@ import {
   useNodesState,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { calculusOneCourse as course } from './courses/calculusOneCourse'
-import { layoutTargets } from './graph/layout'
 import {
   SmartEdgeProvider,
   SmartBezierEdge,
 } from '@tisoap/react-flow-smart-edge'
+import { layoutStressCourse as course } from './courses/layoutStressCourse'
+import { simpleLayout } from './graph/simpleLayout'
 
-const layout = layoutTargets(course.targets, {
-  alignmentRounds: 4,
-  minRowGap: 32,
-})
+const layout = simpleLayout(course.targets)
+
 const edgeTypes = {
   smart: SmartBezierEdge,
 }
@@ -27,7 +25,7 @@ const initialNodes = course.targets.map((target) => ({
   targetPosition: Position.Left,
   style: {
     width: 200,
-    height: 40, // Must match layoutTargets nodeHeight.
+    height: 40,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
