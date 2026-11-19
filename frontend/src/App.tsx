@@ -5,7 +5,7 @@ import {
   useNodesState,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { calculusOneCourse as course } from './courses/calculusOneCourse'
+import { math1310Course as course } from './courses/math1310Course'
 import { layoutTargets } from './graph/layout'
 import {
   SmartEdgeProvider,
