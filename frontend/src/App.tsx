@@ -7,10 +7,8 @@ import {
   type Node,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import {
-  SmartEdgeProvider,
-  SmartBezierEdge,
-} from '@tisoap/react-flow-smart-edge'
+import { SmartEdgeProvider } from '@tisoap/react-flow-smart-edge'
+import { FlowingSmartEdge } from './components/FlowingSmartEdge'
 import { TargetCard } from './components/TargetCard'
 import { math1310Course as course } from './courses/math1310Course'
 import { math1310TargetContent } from './courses/math1310TargetContent'
@@ -36,7 +34,7 @@ const baseEdgeColor = '#6c7086'
 
 const layout = simpleLayout(course.targets)
 const ranks = calculateRanks(course.targets)
-const edgeTypes = { smart: SmartBezierEdge }
+const edgeTypes = { smart: FlowingSmartEdge }
 const targetsById = new Map(course.targets.map((target) => [target.id, target]))
 
 function targetNodeClassName(role: RelationRole) {
@@ -176,13 +174,16 @@ function App() {
 
       return {
         ...edge,
-        animated: focused && !reducedMotion,
+        data: {
+          flowing: focused && !reducedMotion,
+          flowColor: color,
+        },
         style: focused
           ? {
               stroke: color,
               strokeWidth: 2.25,
             }
-          : undefined,
+          : edge.style,
         markerEnd: focused
           ? {
               type: MarkerType.ArrowClosed,
