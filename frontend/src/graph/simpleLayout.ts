@@ -1,10 +1,11 @@
 import type { LearningTarget } from "../types/LearningTarget";
 import { calculateRanks } from "./rank";
 
-const NODE_WIDTH = 200;
-const NODE_HEIGHT = 40;
+export const NODE_WIDTH = 170;
+export const NODE_HEIGHT = 110;
+
 const COLUMN_GAP = 140;
-const ROW_GAP = 40;
+const ROW_GAP = 36;
 
 export function simpleLayout(targets: LearningTarget[]) {
   const ranks = calculateRanks(targets);

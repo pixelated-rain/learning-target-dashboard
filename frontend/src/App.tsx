@@ -10,7 +10,11 @@ import {
   SmartSmoothStepEdge,
 } from '@tisoap/react-flow-smart-edge'
 import { math1310Course as course } from './courses/math1310Course'
-import { simpleLayout } from './graph/simpleLayout'
+import {
+  simpleLayout,
+  NODE_WIDTH,
+  NODE_HEIGHT,
+} from './graph/simpleLayout'
 
 const layout = simpleLayout(course.targets)
 
@@ -23,14 +27,39 @@ const initialNodes = course.targets.map((target) => ({
   position: layout.positions.get(target.id)!,
   sourcePosition: Position.Right,
   targetPosition: Position.Left,
+
   style: {
-    width: 200,
-    height: 40,
+    width: NODE_WIDTH,
+    height: NODE_HEIGHT,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+    textAlign: 'center',
+    boxSizing: 'border-box',
+    borderWidth: target.isCore ? 3 : 1,
   },
-  data: { label: target.name },
+
+  data: {
+    label: (
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 8,
+      }}>
+        <strong style={{ fontSize: 20 }}>
+          {target.id.toUpperCase()}
+        </strong>
+
+        <span style={{
+          fontSize: 12,
+          lineHeight: 1.4,
+        }}>
+          {target.name}
+        </span>
+      </div>
+    ),
+  },
 }))
 
 const edges = layout.edges.map(({ source, target }) => ({
