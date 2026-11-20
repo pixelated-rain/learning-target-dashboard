@@ -13,6 +13,7 @@ import { SmartEdgeProvider } from '@tisoap/react-flow-smart-edge'
 import { MotionSmartEdge } from './components/MotionSmartEdge'
 import { TargetCard } from './components/TargetCard'
 import { math1310Course as course } from './courses/math1310Course'
+import { withMath1310ManualPositions } from './courses/math1310ManualLayout'
 import { animateNodes } from './graph/animateNodes'
 import {
   reflowExpandedRankToSize,
@@ -40,7 +41,13 @@ const prerequisiteColor = '#a6e3a1'
 const postrequisiteColor = '#89b4fa'
 const baseEdgeColor = '#6c7086'
 
-const layout = simpleLayout(course.targets)
+// Keep the automatic rank layout as a fallback/starting point, but use the
+// hand-tweakable planar embedding for the dashboard's default positions.
+const automaticLayout = simpleLayout(course.targets)
+const layout = {
+  ...automaticLayout,
+  positions: withMath1310ManualPositions(automaticLayout.positions),
+}
 const ranks = calculateRanks(course.targets)
 const edgeTypes = { smart: MotionSmartEdge }
 const targetsById = new Map(course.targets.map((target) => [target.id, target]))

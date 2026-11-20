@@ -671,7 +671,7 @@ export const math1310Course: CourseDefinition = {
     {
       id: 'A4',
       name: 'Applied Optimization',
-      prerequisites: ['A2'],
+      prerequisites: ['A2', 'D4'],
       content: {
         objectives: [
           'Given a problem in context that involves optimization, formulate the problem using the language of mathematics & solve it using the tools of calculus.',
