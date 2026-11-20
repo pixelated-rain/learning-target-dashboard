@@ -13,7 +13,6 @@ import { SmartEdgeProvider } from '@tisoap/react-flow-smart-edge'
 import { MotionSmartEdge } from './components/MotionSmartEdge'
 import { TargetCard } from './components/TargetCard'
 import { math1310Course as course } from './courses/math1310Course'
-import { math1310TargetContent } from './courses/math1310TargetContent'
 import { animateNodes } from './graph/animateNodes'
 import {
   reflowExpandedRankToSize,
@@ -89,7 +88,7 @@ function targetCard(
       id={target.id}
       name={target.name}
       expanded={expanded}
-      content={math1310TargetContent[target.id]}
+      content={target.content}
       contentVisible={contentVisible}
     />
   )

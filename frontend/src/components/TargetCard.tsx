@@ -1,5 +1,5 @@
 import { MathText } from './MathText'
-import type { LearningTargetContent } from '../courses/math1310TargetContent'
+import type { LearningTargetContent } from '../types/LearningTarget'
 
 type TargetCardProps = {
   id: string
