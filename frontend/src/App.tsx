@@ -41,14 +41,20 @@ const prerequisiteColor = '#a6e3a1'
 const postrequisiteColor = '#89b4fa'
 const baseEdgeColor = '#6c7086'
 
-// Keep the automatic rank layout as a fallback/starting point, but use the
-// hand-tweakable planar embedding for the dashboard's default positions.
+const USE_SIMPLE_LAYOUT: boolean = false
+
+// Keep the original simple-layout path available for testing the legacy
+// rank-based expansion choreography. The manual planar layout is the default.
 const automaticLayout = simpleLayout(course.targets)
-const layout = {
-  ...automaticLayout,
-  positions: withMath1310ManualPositions(automaticLayout.positions),
-}
-const ranks = calculateRanks(course.targets)
+const layout = USE_SIMPLE_LAYOUT
+  ? automaticLayout
+  : {
+      ...automaticLayout,
+      positions: withMath1310ManualPositions(automaticLayout.positions),
+    }
+const ranks = USE_SIMPLE_LAYOUT
+  ? calculateRanks(course.targets)
+  : new Map<string, number>()
 const edgeTypes = { smart: MotionSmartEdge }
 const targetsById = new Map(course.targets.map((target) => [target.id, target]))
 
@@ -131,12 +137,11 @@ const initialNodes: Node[] = course.targets
       label: targetCard(target, false, false),
     },
   }))
-  .sort((a, b) => {
-    const rankDifference = (ranks.get(a.id) ?? 0) - (ranks.get(b.id) ?? 0)
-    if (rankDifference !== 0) return rankDifference
-
-    return a.position.y - b.position.y || a.position.x - b.position.x
-  })
+  .sort(
+    (a, b) =>
+      a.position.x - b.position.x ||
+      a.position.y - b.position.y,
+  )
 
 type GraphExtent = [[number, number], [number, number]]
 
@@ -271,6 +276,45 @@ function nextFrame() {
   return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
 }
 
+type ManualPositionSnapshot = {
+  id: string
+  position: { x: number; y: number }
+}
+
+function centerExpandedCardToSize(
+  nodes: Node[],
+  id: string,
+  originalPosition: { x: number; y: number },
+  expandedHeight: number,
+): Node[] {
+  return nodes.map((node) =>
+    node.id === id
+      ? {
+          ...node,
+          position: {
+            x: originalPosition.x - (EXPANDED_WIDTH - NODE_WIDTH) / 2,
+            y: originalPosition.y - (expandedHeight - NODE_HEIGHT) / 2,
+          },
+        }
+      : node,
+  )
+}
+
+function restoreManualPosition(
+  nodes: Node[],
+  snapshot: ManualPositionSnapshot,
+): Node[] {
+  return nodes.map((node) =>
+    node.id === snapshot.id
+      ? { ...node, position: { ...snapshot.position } }
+      : node,
+  )
+}
+
+function edgeTouchesNode(sourceId: string, targetId: string, nodeId: string) {
+  return sourceId === nodeId || targetId === nodeId
+}
+
 function edgeTouchesOrCrossesRank(
   sourceId: string,
   targetId: string,
@@ -310,9 +354,11 @@ function App() {
   const [phase, setPhase] = useState<ExpansionPhase>('idle')
   const [edgeBandPhase, setEdgeBandPhase] = useState<EdgeBandPhase>('normal')
   const [movingRank, setMovingRank] = useState<number | null>(null)
+  const [movingTargetId, setMovingTargetId] = useState<string | null>(null)
   const [routingRevision, setRoutingRevision] = useState(0)
 
   const rankSnapshot = useRef<RankPositionSnapshot | null>(null)
+  const manualPositionSnapshot = useRef<ManualPositionSnapshot | null>(null)
   const measureRef = useRef<HTMLDivElement | null>(null)
   const nodesRef = useRef(nodes)
   const phaseRef = useRef<ExpansionPhase>(phase)
@@ -376,16 +422,19 @@ function App() {
           ? postrequisiteColor
           : undefined
 
-      const affectedByMovingRank = movingRank !== null &&
-        edgeTouchesOrCrossesRank(edge.source, edge.target, movingRank)
+      const affectedByAnimation = USE_SIMPLE_LAYOUT
+        ? movingRank !== null &&
+          edgeTouchesOrCrossesRank(edge.source, edge.target, movingRank)
+        : movingTargetId !== null &&
+          edgeTouchesNode(edge.source, edge.target, movingTargetId)
 
       return {
         ...edge,
         data: {
-          phase: affectedByMovingRank ? edgeBandPhase : 'normal',
+          phase: affectedByAnimation ? edgeBandPhase : 'normal',
           flowing: focused && !reducedMotion,
           suppressFallback:
-            affectedByMovingRank && edgeBandPhase !== 'normal',
+            affectedByAnimation && edgeBandPhase !== 'normal',
           routingRevision,
         },
         style: focused
@@ -407,7 +456,14 @@ function App() {
     })
 
     return decoratedEdges
-  }, [edgeBandPhase, focusedId, movingRank, reducedMotion, routingRevision])
+  }, [
+    edgeBandPhase,
+    focusedId,
+    movingRank,
+    movingTargetId,
+    reducedMotion,
+    routingRevision,
+  ])
 
   useEffect(() => {
     setNodes((current) => setFocusRoles(current, focusedId))
@@ -449,7 +505,7 @@ function App() {
     resolve()
   }
 
-  function rerouteToCurrentGeometry() {
+  function rerouteToCurrentGeometry(updateRoutingNodes = true) {
     finishPendingRoutingWait()
 
     return new Promise<void>((resolve) => {
@@ -466,7 +522,10 @@ function App() {
       // endpoint coordinates at the same time, instead of registering every
       // intermediate animation frame with Smart Edge.
       setRoutingRevision((current) => current + 1)
-      setRoutingNodes([...nodesRef.current])
+
+      if (updateRoutingNodes) {
+        setRoutingNodes([...nodesRef.current])
+      }
     })
   }
 
@@ -477,12 +536,97 @@ function App() {
     // measurements should update routing geometry normally. During motion the
     // provider stays frozen until rerouteToCurrentGeometry() is called.
     if (phaseRef.current === 'idle' || phaseRef.current === 'expanded') {
-      setRoutingNodes((current) => applyNodeChanges(changes, current))
+      const routingChanges = !USE_SIMPLE_LAYOUT && expandedId !== null
+        ? changes.filter(
+            (change) => !('id' in change) || change.id !== expandedId,
+          )
+        : changes
+
+      if (routingChanges.length > 0) {
+        setRoutingNodes((current) => applyNodeChanges(routingChanges, current))
+      }
     }
   }
 
   async function openExpandedCardAnimated(id: string, expandedHeight: number) {
     if (phaseRef.current !== 'measuring') return
+
+    if (!USE_SIMPLE_LAYOUT) {
+      const current = nodesRef.current
+      const originalNode = current.find((node) => node.id === id)
+      if (originalNode === undefined) return
+
+      const snapshot: ManualPositionSnapshot = {
+        id,
+        position: { ...originalNode.position },
+      }
+      manualPositionSnapshot.current = snapshot
+      setMovingTargetId(id)
+
+      const focusedStart = setFocusRoles(current, id)
+      commitNodes(focusedStart)
+
+      const expanded = setExpandedCard(
+        focusedStart,
+        id,
+        false,
+        expandedHeight,
+      )
+      const finalNodes = centerExpandedCardToSize(
+        expanded,
+        id,
+        snapshot.position,
+        expandedHeight,
+      )
+
+      if (reducedMotion) {
+        const visible = setExpandedCard(finalNodes, id, true, expandedHeight)
+        commitNodes(visible)
+        setRoutingRevision((current) => current + 1)
+        setEdgeBandPhase('normal')
+        setMovingTargetId(null)
+        changePhase('expanded')
+        return
+      }
+
+      changePhase('hiding-edges')
+      setEdgeBandPhase('hidden')
+      await sleep(motionTiming.edgeFade)
+
+      changePhase('moving')
+      await animateNodes(
+        focusedStart,
+        finalNodes,
+        motionTiming.layout,
+        commitNodes,
+      )
+
+      await nextFrame()
+      await nextFrame()
+      // Keep the expanded node's collapsed routing proxy in SmartEdgeProvider.
+      // Only its incident edge endpoints should react to the larger card.
+      await rerouteToCurrentGeometry(false)
+      await nextFrame()
+
+      changePhase('drawing-edges')
+      setEdgeBandPhase('drawing')
+      await sleep(motionTiming.edgeDrawMax)
+      setEdgeBandPhase('normal')
+      setMovingTargetId(null)
+
+      changePhase('revealing-content')
+      const visible = setExpandedCard(
+        nodesRef.current,
+        id,
+        true,
+        expandedHeight,
+      )
+      commitNodes(visible)
+      await sleep(motionTiming.contentReveal)
+
+      changePhase('expanded')
+      return
+    }
 
     const current = nodesRef.current
     const snapshot = snapshotRankPositions(current, id, ranks)
@@ -559,12 +703,76 @@ function App() {
     changePhase('expanded')
   }
 
-  async function closeExpandedCardAnimated() {
+  async function closeExpandedCardAnimated(animateEdgeDraw = true) {
     const id = expandedId
-    const snapshot = rankSnapshot.current
 
-    if (id === null || snapshot === null) return
+    if (id === null) return
     if (phaseRef.current !== 'expanded') return
+
+    if (!USE_SIMPLE_LAYOUT) {
+      const snapshot = manualPositionSnapshot.current
+      if (snapshot === null || snapshot.id !== id) return
+
+      const expandedNode = nodesRef.current.find((node) => node.id === id)
+      const expandedHeight = typeof expandedNode?.style?.height === 'number'
+        ? expandedNode.style.height
+        : NODE_HEIGHT
+
+      if (reducedMotion) {
+        const restored = restoreManualPosition(nodesRef.current, snapshot)
+        const collapsed = setExpandedCard(restored, null, false)
+        commitNodes(collapsed)
+        setRoutingNodes(collapsed)
+        manualPositionSnapshot.current = null
+        setExpandedId(null)
+        setMovingTargetId(null)
+        setEdgeBandPhase('normal')
+        changePhase('idle')
+        return
+      }
+
+      changePhase('collapsing')
+
+      // Hide the details first while the expanded card stays in place.
+      commitNodes(setExpandedCard(nodesRef.current, id, false, expandedHeight))
+      await sleep(motionTiming.edgeFade)
+
+      setMovingTargetId(id)
+      setEdgeBandPhase('hidden')
+      await sleep(motionTiming.edgeFade)
+
+      const fromNodes = nodesRef.current
+      const restored = restoreManualPosition(fromNodes, snapshot)
+      const collapsed = setExpandedCard(restored, null, false)
+
+      await animateNodes(
+        fromNodes,
+        collapsed,
+        motionTiming.layout,
+        commitNodes,
+      )
+
+      await nextFrame()
+      await nextFrame()
+      await rerouteToCurrentGeometry()
+      await nextFrame()
+
+      if (animateEdgeDraw) {
+        changePhase('drawing-edges')
+        setEdgeBandPhase('drawing')
+        await sleep(motionTiming.edgeDrawMax)
+      }
+
+      setEdgeBandPhase('normal')
+      setMovingTargetId(null)
+      manualPositionSnapshot.current = null
+      setExpandedId(null)
+      changePhase('idle')
+      return
+    }
+
+    const snapshot = rankSnapshot.current
+    if (snapshot === null) return
 
     const rank = ranks.get(id)
     if (rank === undefined) return
@@ -613,9 +821,12 @@ function App() {
     await rerouteToCurrentGeometry()
     await nextFrame()
 
-    changePhase('drawing-edges')
-    setEdgeBandPhase('drawing')
-    await sleep(motionTiming.edgeDrawMax)
+    if (animateEdgeDraw) {
+      changePhase('drawing-edges')
+      setEdgeBandPhase('drawing')
+      await sleep(motionTiming.edgeDrawMax)
+    }
+
     setEdgeBandPhase('normal')
     setMovingRank(null)
     rankSnapshot.current = null
@@ -638,7 +849,7 @@ function App() {
         return
       }
 
-      await closeExpandedCardAnimated()
+      await closeExpandedCardAnimated(false)
       requestOpen(id)
       return
     }
