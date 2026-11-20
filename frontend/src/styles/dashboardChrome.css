@@ -1,0 +1,217 @@
+/*
+ * CozetteVector is the scalable compatibility build of Cozette.
+ * Cozette is MIT licensed: https://github.com/the-moonwitch/Cozette
+ */
+@font-face {
+  font-family: 'CozetteVector';
+  src:
+    local('CozetteVector'),
+    local('Cozette Vector'),
+    url('https://db.onlinewebfonts.com/t/8a3a0368d72849651439e96da7cdba57.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+.dashboard-shell {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--graph-background);
+  color: var(--graph-text);
+  font-family: 'CozetteVector', 'Cozette', monospace;
+}
+
+.dashboard-header {
+  position: relative;
+  z-index: 2000;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 76px;
+  padding: 12px 18px;
+  box-sizing: border-box;
+  background: var(--graph-background);
+}
+
+.dashboard-title {
+  margin: 0;
+  color: var(--graph-text);
+  font-family: inherit;
+  font-size: clamp(30px, 3vw, 42px);
+  font-weight: 400;
+  line-height: 1;
+  text-align: center;
+}
+
+.dashboard-reset-button {
+  position: absolute;
+  top: 50%;
+  left: 18px;
+  transform: translateY(-50%);
+  padding: 8px 12px;
+  border: 1px solid var(--graph-border);
+  border-radius: 6px;
+  background: var(--graph-card);
+  color: var(--graph-text);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+.dashboard-reset-button:hover {
+  border-color: var(--graph-active);
+}
+
+.dashboard-reset-button:focus-visible {
+  outline: 2px solid var(--graph-active);
+  outline-offset: 2px;
+}
+
+
+.dashboard-help {
+  position: absolute;
+  top: 50%;
+  right: 18px;
+  transform: translateY(-50%);
+}
+
+.dashboard-help-button {
+  display: flex;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--graph-border);
+  border-radius: 50%;
+  background: var(--graph-card);
+  color: var(--graph-text);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+.dashboard-help-glyph {
+  display: block;
+  font-size: 30px;
+  line-height: 1;
+  transform: translateY(-1px);
+}
+
+.dashboard-help:hover .dashboard-help-button,
+.dashboard-help--open .dashboard-help-button {
+  border-color: var(--graph-active);
+}
+
+.dashboard-help-button:focus-visible {
+  outline: 2px solid var(--graph-active);
+  outline-offset: 2px;
+}
+
+.dashboard-help-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(320px, calc(100vw - 28px));
+  padding: 14px 16px;
+  box-sizing: border-box;
+  border: 1px solid var(--graph-border);
+  border-radius: 8px;
+  background: var(--graph-card);
+  color: var(--graph-text);
+  font-size: 15px;
+  line-height: 1.4;
+  box-shadow: 0 10px 28px rgb(0 0 0 / 25%);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease,
+    visibility 120ms ease;
+}
+
+.dashboard-help:hover .dashboard-help-panel,
+.dashboard-help--open .dashboard-help-panel {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.dashboard-help-panel strong {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 17px;
+  font-weight: 400;
+}
+
+.dashboard-help-panel p {
+  margin: 6px 0 0;
+}
+
+.dashboard-shell .react-flow__node:focus-visible {
+  outline: 3px solid var(--graph-active);
+  outline-offset: 4px;
+}
+
+.dashboard-shell .target-card-tab:focus-visible {
+  color: var(--graph-text);
+  background: rgb(255 255 255 / 0.08);
+  outline: 2px solid var(--graph-active);
+  outline-offset: 1px;
+}
+
+.dashboard-graph {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  overflow: hidden;
+  background: var(--graph-background);
+}
+
+.dashboard-shell .react-flow,
+.dashboard-shell .react-flow__node {
+  font-family: inherit;
+}
+
+@media (max-width: 640px) {
+  .dashboard-header {
+    min-height: 104px;
+    align-items: flex-start;
+    padding: 12px 14px;
+  }
+
+  .dashboard-title {
+    font-size: 28px;
+  }
+
+  .dashboard-reset-button {
+    top: auto;
+    bottom: 10px;
+    left: 14px;
+    transform: none;
+  }
+
+  .dashboard-help {
+    top: auto;
+    right: 14px;
+    bottom: 10px;
+    transform: none;
+  }
+}

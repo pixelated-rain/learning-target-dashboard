@@ -113,7 +113,7 @@
   margin-top: 16px;
   padding-top: 12px;
   border-top: 1px solid var(--graph-border);
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1.5;
   text-align: left;
 }
@@ -188,12 +188,12 @@
 .target-card-lesson-relationship,
 .target-card-resource-details {
   color: var(--graph-edge);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.35;
 }
 
 .target-card-key-link {
-  font-size: 12px;
+  font-size: 14px;
   white-space: nowrap;
 }
 
@@ -230,7 +230,7 @@
   background: transparent;
   color: var(--graph-edge);
   font: inherit;
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.2;
   cursor: pointer;
 }

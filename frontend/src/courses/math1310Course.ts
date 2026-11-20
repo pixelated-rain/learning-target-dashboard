@@ -342,9 +342,6 @@ export const math1310Course: CourseDefinition = {
         objectives: [
           'Compute derivatives of constant, power, polynomial, exponential, trigonometric, logarithmic, and inverse trigonometric functions.',
         ],
-        notes: [
-          'The derivative formulas that could tested in D3 would be 1-6 and 9-24 on the following webpage.',
-        ],
         resources: [
           {
             type: 'link',

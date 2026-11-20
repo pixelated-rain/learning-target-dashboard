@@ -174,10 +174,10 @@ export function TargetCard({
         className="target-card-header"
         style={{ alignItems: expanded ? 'flex-start' : 'center' }}
       >
-        <strong style={{ fontSize: expanded ? 24 : 22, lineHeight: 1.1 }}>
+        <strong style={{ fontSize: expanded ? 26 : 24, lineHeight: 1.1 }}>
           {id.toUpperCase()}
         </strong>
-        <span style={{ fontSize: expanded ? 16 : 14, lineHeight: 1.4 }}>
+        <span style={{ fontSize: expanded ? 18 : 16, lineHeight: 1.4 }}>
           {name}
         </span>
       </div>
@@ -187,8 +187,15 @@ export function TargetCard({
           aria-hidden={!contentVisible}
           className={`nodrag nowheel target-card-details${contentVisible ? ' target-card-details--visible' : ''}`}
           onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
         >
-          <div key={shownTab} className="target-card-tab-panel">
+          <div
+            key={shownTab}
+            id={`${id}-details-panel`}
+            role="tabpanel"
+            aria-labelledby={`${id}-${shownTab}-tab`}
+            className="target-card-tab-panel"
+          >
             {shownTab === 'objectives' && (
               <>
                 <strong className="target-card-section-title">
@@ -277,9 +284,11 @@ export function TargetCard({
             {availableTabs.map((tab) => (
               <button
                 key={tab}
+                id={`${id}-${tab}-tab`}
                 type="button"
                 role="tab"
                 aria-selected={shownTab === tab}
+                aria-controls={`${id}-details-panel`}
                 className={`target-card-tab${shownTab === tab ? ' target-card-tab--active' : ''}`}
                 onClick={(event) => {
                   event.stopPropagation()

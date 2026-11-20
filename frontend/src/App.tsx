@@ -27,7 +27,10 @@ import { useMotionPreference } from './motion/motionSettings'
 import { motionTiming } from './motion/timing'
 import './styles/graphFocus.css'
 import './styles/graphMotion.css'
+import './styles/dashboardChrome.css'
 import type { LearningTarget } from './types/LearningTarget'
+
+document.title = 'Learning Target Dashboard'
 
 const EXPANDED_WIDTH = 390
 const EXPANDED_HEIGHT = 390
@@ -56,6 +59,11 @@ type EdgeBandPhase = 'normal' | 'hidden' | 'drawing'
 
 function targetNodeClassName(role: RelationRole) {
   return `target-node target-node--${role}`
+}
+
+function targetAriaLabel(target: LearningTarget, expanded: boolean) {
+  const action = expanded ? 'collapse details' : 'expand details'
+  return `${target.id}: ${target.name}. Press Enter to ${action}.`
 }
 
 function cardStyle(
@@ -96,21 +104,32 @@ function targetCard(
   )
 }
 
-const initialNodes: Node[] = course.targets.map((target) => ({
-  id: target.id,
-  position: layout.positions.get(target.id)!,
-  sourcePosition: Position.Right,
-  targetPosition: Position.Left,
-  className: targetNodeClassName('none'),
-  zIndex: 10,
-  style: cardStyle(target, false),
-  data: {
-    expanded: false,
-    contentVisible: false,
-    relationRole: 'none',
-    label: targetCard(target, false, false),
-  },
-}))
+const initialNodes: Node[] = course.targets
+  .map((target) => ({
+    id: target.id,
+    position: layout.positions.get(target.id)!,
+    sourcePosition: Position.Right,
+    targetPosition: Position.Left,
+    className: targetNodeClassName('none'),
+    zIndex: 10,
+    style: cardStyle(target, false),
+    focusable: true,
+    selectable: false,
+    ariaRole: 'button' as const,
+    ariaLabel: targetAriaLabel(target, false),
+    data: {
+      expanded: false,
+      contentVisible: false,
+      relationRole: 'none',
+      label: targetCard(target, false, false),
+    },
+  }))
+  .sort((a, b) => {
+    const rankDifference = (ranks.get(a.id) ?? 0) - (ranks.get(b.id) ?? 0)
+    if (rankDifference !== 0) return rankDifference
+
+    return a.position.y - b.position.y || a.position.x - b.position.x
+  })
 
 type GraphExtent = [[number, number], [number, number]]
 
@@ -196,6 +215,8 @@ function setExpandedCard(
       ...node,
       zIndex: expanded ? 1000 : 10,
       style: cardStyle(target, expanded, expanded ? expandedHeight : undefined),
+      ariaRole: expanded ? 'group' : 'button',
+      ariaLabel: targetAriaLabel(target, expanded),
       data: {
         ...node.data,
         expanded,
@@ -275,6 +296,8 @@ function App() {
   const [routingNodes, setRoutingNodes] = useState<Node[]>(initialNodes)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const [keyboardFocusedId, setKeyboardFocusedId] = useState<string | null>(null)
+  const [helpPinned, setHelpPinned] = useState(false)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [pendingOpenId, setPendingOpenId] = useState<string | null>(null)
   const [phase, setPhase] = useState<ExpansionPhase>('idle')
@@ -331,7 +354,7 @@ function App() {
     }
   }, [])
 
-  const focusedId = draggingId ?? expandedId ?? hoveredId
+  const focusedId = draggingId ?? expandedId ?? keyboardFocusedId ?? hoveredId
 
   const edges = useMemo(() => {
     const decoratedEdges = baseEdges.map((edge) => {
@@ -624,18 +647,74 @@ function App() {
     phase !== 'idle' && phase !== 'expanded'
 
   return (
-    <div
-      ref={graphRootRef}
-      className={reducedMotion ? 'graph-root--reduced-motion' : undefined}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        width: '100%',
-        height: '100%',
-        overflow: 'hidden',
-        background: 'var(--graph-background)',
-      }}
-    >
+    <div className="dashboard-shell">
+      <header className="dashboard-header">
+        <button
+          className="dashboard-reset-button"
+          type="button"
+          onClick={() => window.location.reload()}
+        >
+          Reset View
+        </button>
+        <h1 className="dashboard-title">Learning Target Dashboard</h1>
+        <div className={`dashboard-help${helpPinned ? ' dashboard-help--open' : ''}`}>
+          <button
+            className="dashboard-help-button"
+            type="button"
+            aria-label="How to use the dashboard"
+            aria-expanded={helpPinned}
+            aria-controls="dashboard-help-panel"
+            onClick={() => setHelpPinned((current) => !current)}
+          >
+            <span className="dashboard-help-glyph" aria-hidden="true">?</span>
+          </button>
+          <div
+            id="dashboard-help-panel"
+            className="dashboard-help-panel"
+            role="region"
+            aria-label="How to use the dashboard"
+          >
+            <strong>How to use the map</strong>
+            <p>Zoom in or out to explore the full map.</p>
+            <p>Click a target to see more about it.</p>
+            <p>Hover a target to highlight its prerequisites and postrequisites.</p>
+            <p>Drag targets to rearrange the view.</p>
+            <p>Use Tab to move through controls and targets, then Enter to expand or collapse a target.</p>
+            <p>When a target is open, Tab through its detail tabs and press Enter to switch sections.</p>
+            <p>Use Reset View to return to the starting layout.</p>
+          </div>
+        </div>
+      </header>
+
+      <div
+        ref={graphRootRef}
+        className={`dashboard-graph${
+          reducedMotion ? ' graph-root--reduced-motion' : ''
+        }`}
+        onKeyDownCapture={(event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return
+
+          const element = event.target as HTMLElement
+          if (!element.classList.contains('react-flow__node')) return
+
+          const id = element.dataset.id
+          if (id === undefined) return
+
+          event.preventDefault()
+          event.stopPropagation()
+          void handleNodeClick(id)
+        }}
+        onFocusCapture={(event) => {
+          const element = event.target as HTMLElement
+          const node = element.closest<HTMLElement>('.react-flow__node[data-id]')
+          setKeyboardFocusedId(node?.dataset.id ?? null)
+        }}
+        onBlurCapture={(event) => {
+          const next = event.relatedTarget as HTMLElement | null
+          const node = next?.closest<HTMLElement>('.react-flow__node[data-id]')
+          setKeyboardFocusedId(node?.dataset.id ?? null)
+        }}
+      >
       {measuringTarget && (
         <div
           ref={measureRef}
@@ -678,6 +757,9 @@ function App() {
           minZoom={graphViewport.minZoom}
           maxZoom={Math.max(2, graphViewport.minZoom)}
           nodesDraggable={!transitioning}
+          nodesFocusable
+          edgesFocusable={false}
+          autoPanOnNodeFocus
           onNodeMouseEnter={(_, node) => setHoveredId(node.id)}
           onNodeMouseLeave={(_, node) => {
             setHoveredId((current) => current === node.id ? null : current)
@@ -699,6 +781,7 @@ function App() {
           fitView
         />
       </SmartEdgeProvider>
+      </div>
     </div>
   )
 }
