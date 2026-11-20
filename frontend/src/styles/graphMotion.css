@@ -22,9 +22,13 @@
   color: var(--graph-text);
 }
 
-.react-flow .react-flow__node .target-card-objectives li,
+.react-flow .react-flow__node .target-card-objectives li {
+  color: var(--graph-text);
+}
+
 .react-flow .react-flow__node .target-card-objectives li::marker {
   color: var(--graph-text);
+  font-size: 0.95em;
 }
 
 .target-card-details {

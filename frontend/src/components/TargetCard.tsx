@@ -28,10 +28,10 @@ export function TargetCard({
           gap: 8,
         }}
       >
-        <strong style={{ fontSize: expanded ? 24 : 20, lineHeight: 1.1 }}>
+        <strong style={{ fontSize: expanded ? 24 : 22, lineHeight: 1.1 }}>
           {id.toUpperCase()}
         </strong>
-        <span style={{ fontSize: expanded ? 16 : 12, lineHeight: 1.4 }}>
+        <span style={{ fontSize: expanded ? 16 : 14, lineHeight: 1.4 }}>
           {name}
         </span>
       </div>
@@ -62,15 +62,17 @@ export function TargetCard({
               style={{ margin: '10px 0 0', paddingLeft: 20 }}
             >
               {content.objectives.map((objective, index) => (
-                <li
-                  key={index}
-                  className="target-card-reveal-item"
-                  style={{
-                    marginBottom: 8,
-                    animationDelay: `${revealIndex++ * 25}ms`,
-                  }}
-                >
-                  <MathText>{objective}</MathText>
+                <li key={index} style={{ marginBottom: 8 }}>
+                  <span
+                    className="target-card-reveal-item"
+                    style={{
+                      display: 'inline-block',
+                      verticalAlign: 'top',
+                      animationDelay: `${revealIndex++ * 25}ms`,
+                    }}
+                  >
+                    <MathText>{objective}</MathText>
+                  </span>
                 </li>
               ))}
             </ul>

@@ -110,7 +110,7 @@ export const math1310TargetContent: Record<string, LearningTargetContent> = {
   A1: {
     objectives: [
       "Identify the form of a limit and decide whether the form is determinate or indeterminate.",
-      "Use appropriate algebraic simplification to rewrite a limit and use l'Hopital's Rule.",
+      "Use appropriate algebraic simplification to rewrite a limit and use l'Hôpital's Rule.",
     ],
   },
   A2: {
