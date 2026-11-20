@@ -1,4 +1,4 @@
-import type { LearningTarget } from './LearningTarget'
+import type { LearningTarget, ResourceLink } from './LearningTarget'
 
 /**
  * Minimal course shape used by generic graph/layout code and lightweight
@@ -12,8 +12,8 @@ export type LessonResource = {
   id: string
   number?: number
   title: string
-  worksheetUrl?: string
-  keyUrl?: string
+  worksheet?: ResourceLink
+  key?: ResourceLink
 }
 
 /**

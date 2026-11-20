@@ -30,6 +30,7 @@ import './styles/graphMotion.css'
 import type { LearningTarget } from './types/LearningTarget'
 
 const EXPANDED_WIDTH = 390
+const EXPANDED_HEIGHT = 390
 const GRAPH_BOUND_PADDING = 180
 
 const prerequisiteColor = '#a6e3a1'
@@ -64,7 +65,7 @@ function cardStyle(
 ) {
   return {
     width: expanded ? EXPANDED_WIDTH : NODE_WIDTH,
-    height: expanded ? expandedHeight : NODE_HEIGHT,
+    height: expanded ? expandedHeight ?? EXPANDED_HEIGHT : NODE_HEIGHT,
     minHeight: expanded ? NODE_HEIGHT : undefined,
     display: 'flex',
     alignItems: expanded ? 'stretch' : 'center',
@@ -89,6 +90,7 @@ function targetCard(
       name={target.name}
       expanded={expanded}
       content={target.content}
+      lessons={course.lessons}
       contentVisible={contentVisible}
     />
   )

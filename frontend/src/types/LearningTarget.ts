@@ -3,10 +3,26 @@ export type ResourceLink = {
   url: string
 }
 
+export type LinkResource = {
+  type: 'link'
+  label: string
+  url: string
+}
+
+export type TextbookResource = {
+  type: 'textbook'
+  title: string
+  section?: string
+  pages?: string
+  url?: string
+}
+
+export type LearningResource = LinkResource | TextbookResource
+
 export type LessonRelationship =
   | 'primary'
   | 'preview'
-  | 'reinforcement'
+  | 'extension'
   | 'application'
 
 export type LessonAssociationBasis =
@@ -25,8 +41,9 @@ export type LearningTargetContent = {
   objectives: string[]
   description?: string
   notes?: string[]
+  targetPage?: ResourceLink
   lessons?: TargetLesson[]
-  resources?: ResourceLink[]
+  resources?: LearningResource[]
 }
 
 export type LearningTarget = {

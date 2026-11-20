@@ -89,3 +89,175 @@
     clip-path: inset(0 0 0 0);
   }
 }
+
+.target-card-shell {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.target-card-header {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.target-card-details {
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--graph-border);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
+}
+
+.target-card-tab-panel {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding-right: 8px;
+  scrollbar-gutter: stable;
+  animation: target-card-tab-enter 140ms ease-out both;
+}
+
+.target-card-section-title {
+  display: block;
+  margin-bottom: 10px;
+}
+
+.react-flow .react-flow__node .target-card-objectives {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.react-flow .react-flow__node .target-card-objectives li {
+  margin-bottom: 8px;
+}
+
+.target-card-objective-text {
+  display: inline-block;
+  vertical-align: top;
+}
+
+.target-card-copy {
+  margin: 10px 0 0;
+}
+
+.target-card-target-page {
+  display: inline-block;
+  margin-top: 12px;
+}
+
+.target-card-lesson-list,
+.target-card-resource-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.target-card-lesson-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: 8px;
+}
+
+.target-card-lesson-number {
+  color: var(--graph-edge);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.target-card-lesson-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.target-card-lesson-title {
+  min-width: 0;
+}
+
+.target-card-lesson-relationship,
+.target-card-resource-details {
+  color: var(--graph-edge);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.target-card-key-link {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.target-card-resource-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.target-card-link {
+  color: var(--graph-postrequisite);
+  text-decoration: none;
+}
+
+.target-card-link:hover,
+.target-card-link:focus-visible {
+  text-decoration: underline;
+}
+
+.target-card-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 2px;
+  margin: 10px -6px -4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--graph-border);
+}
+
+.target-card-tab {
+  min-width: 0;
+  flex: 1 1 0;
+  border: 0;
+  border-radius: 5px;
+  padding: 5px 3px;
+  background: transparent;
+  color: var(--graph-edge);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.target-card-tab:hover,
+.target-card-tab:focus-visible {
+  color: var(--graph-text);
+  background: rgb(255 255 255 / 0.05);
+  outline: none;
+}
+
+.target-card-tab--active {
+  color: var(--graph-text);
+  background: rgb(255 255 255 / 0.08);
+}
+
+.graph-root--reduced-motion .target-card-tab-panel {
+  animation: none;
+}
+
+@keyframes target-card-tab-enter {
+  from {
+    opacity: 0;
+    transform: translateX(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}

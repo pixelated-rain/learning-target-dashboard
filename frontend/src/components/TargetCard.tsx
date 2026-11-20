@@ -1,12 +1,128 @@
+import { useEffect, useMemo, useState } from 'react'
 import { MathText } from './MathText'
-import type { LearningTargetContent } from '../types/LearningTarget'
+import type { LessonResource } from '../types/Course'
+import type {
+  LearningResource,
+  LearningTargetContent,
+  LessonRelationship,
+  TargetLesson,
+} from '../types/LearningTarget'
+
+type TargetCardTab = 'objectives' | 'lessons' | 'connections' | 'resources'
 
 type TargetCardProps = {
   id: string
   name: string
   expanded: boolean
   content?: LearningTargetContent
+  lessons?: LessonResource[]
   contentVisible?: boolean
+}
+
+const tabLabels: Record<TargetCardTab, string> = {
+  objectives: 'Objectives',
+  lessons: 'Lessons',
+  connections: 'Connections',
+  resources: 'Resources',
+}
+
+const relationshipLabels: Record<Exclude<LessonRelationship, 'primary'>, string> = {
+  preview: 'Preview',
+  extension: 'Extension',
+  application: 'Application',
+}
+
+function LessonRow({
+  association,
+  lesson,
+  showRelationship = false,
+}: {
+  association: TargetLesson
+  lesson?: LessonResource
+  showRelationship?: boolean
+}) {
+  const title = lesson?.title ?? association.lessonId
+  const number = lesson?.number
+  const worksheet = lesson?.worksheet
+  const key = lesson?.key
+
+  return (
+    <div className="target-card-lesson-row">
+      <span className="target-card-lesson-number">
+        {number ?? ''}
+      </span>
+
+      <div className="target-card-lesson-main">
+        {worksheet ? (
+          <a
+            className="target-card-lesson-title target-card-link"
+            href={worksheet.url}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {title}
+          </a>
+        ) : (
+          <span className="target-card-lesson-title">{title}</span>
+        )}
+
+        {showRelationship && association.relationship !== 'primary' && (
+          <span className="target-card-lesson-relationship">
+            {relationshipLabels[association.relationship]}
+          </span>
+        )}
+      </div>
+
+      {key && (
+        <a
+          className="target-card-key-link target-card-link"
+          href={key.url}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Key
+        </a>
+      )}
+    </div>
+  )
+}
+
+function ResourceItem({ resource }: { resource: LearningResource }) {
+  if (resource.type === 'link') {
+    return (
+      <div className="target-card-resource-item">
+        <a
+          className="target-card-link"
+          href={resource.url}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {resource.label}
+        </a>
+      </div>
+    )
+  }
+
+  const details = [resource.section, resource.pages].filter(Boolean).join(' · ')
+  const title = resource.url ? (
+    <a
+      className="target-card-link"
+      href={resource.url}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      {resource.title}
+    </a>
+  ) : (
+    <span>{resource.title}</span>
+  )
+
+  return (
+    <div className="target-card-resource-item">
+      <strong>{title}</strong>
+      {details && <span className="target-card-resource-details">{details}</span>}
+    </div>
+  )
 }
 
 export function TargetCard({
@@ -14,19 +130,49 @@ export function TargetCard({
   name,
   expanded,
   content,
+  lessons = [],
   contentVisible = true,
 }: TargetCardProps) {
-  let revealIndex = 0
+  const [activeTab, setActiveTab] = useState<TargetCardTab>('objectives')
+
+  useEffect(() => {
+    if (!expanded) {
+      setActiveTab('objectives')
+    }
+  }, [expanded])
+
+  const lessonsById = useMemo(
+    () => new Map(lessons.map((lesson) => [lesson.id, lesson])),
+    [lessons],
+  )
+
+  const associations = content?.lessons ?? []
+  const primaryLessons = associations.filter(
+    (association) => association.relationship === 'primary',
+  )
+  const connections = associations.filter(
+    (association) => association.relationship !== 'primary',
+  )
+  const resources = content?.resources ?? []
+
+  const availableTabs: TargetCardTab[] = [
+    'objectives',
+    ...(primaryLessons.length > 0 ? ['lessons' as const] : []),
+    ...(connections.length > 0 ? ['connections' as const] : []),
+    ...(resources.length > 0 ? ['resources' as const] : []),
+  ]
+
+  const shownTab = availableTabs.includes(activeTab) ? activeTab : 'objectives'
+
+  function selectTab(tab: TargetCardTab) {
+    setActiveTab(tab)
+  }
 
   return (
-    <div style={{ width: '100%', minWidth: 0 }}>
+    <div className="target-card-shell">
       <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: expanded ? 'flex-start' : 'center',
-          gap: 8,
-        }}
+        className="target-card-header"
+        style={{ alignItems: expanded ? 'flex-start' : 'center' }}
       >
         <strong style={{ fontSize: expanded ? 24 : 22, lineHeight: 1.1 }}>
           {id.toUpperCase()}
@@ -40,88 +186,110 @@ export function TargetCard({
         <div
           aria-hidden={!contentVisible}
           className={`nodrag nowheel target-card-details${contentVisible ? ' target-card-details--visible' : ''}`}
-          style={{
-            borderTop: '1px solid #d8d8dd',
-            marginTop: 16,
-            paddingTop: 12,
-            fontSize: 13,
-            lineHeight: 1.5,
-            textAlign: 'left',
-          }}
+          onClick={(event) => event.stopPropagation()}
         >
-          <strong
-            className="target-card-reveal-item"
-            style={{ animationDelay: `${revealIndex++ * 25}ms` }}
-          >
-            {content.objectives.length > 0 ? 'Learning objectives' : 'About this target'}
-          </strong>
+          <div key={shownTab} className="target-card-tab-panel">
+            {shownTab === 'objectives' && (
+              <>
+                <strong className="target-card-section-title">
+                  {content.objectives.length > 0 ? 'Learning objectives' : 'About this target'}
+                </strong>
 
-          {content.objectives.length > 0 && (
-            <ul
-              className="target-card-objectives"
-              style={{ margin: '10px 0 0', paddingLeft: 20 }}
-            >
-              {content.objectives.map((objective, index) => (
-                <li key={index} style={{ marginBottom: 8 }}>
-                  <span
-                    className="target-card-reveal-item"
-                    style={{
-                      display: 'inline-block',
-                      verticalAlign: 'top',
-                      animationDelay: `${revealIndex++ * 25}ms`,
-                    }}
+                {content.objectives.length > 0 && (
+                  <ul className="target-card-objectives">
+                    {content.objectives.map((objective, index) => (
+                      <li key={index}>
+                        <span className="target-card-objective-text">
+                          <MathText>{objective}</MathText>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {content.description && (
+                  <p className="target-card-copy">{content.description}</p>
+                )}
+
+                {content.notes?.map((note, index) => (
+                  <p key={index} className="target-card-copy">
+                    <MathText>{note}</MathText>
+                  </p>
+                ))}
+
+                {content.targetPage && (
+                  <a
+                    className="target-card-target-page target-card-link"
+                    href={content.targetPage.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
                   >
-                    <MathText>{objective}</MathText>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
+                    {content.targetPage.label}
+                  </a>
+                )}
+              </>
+            )}
 
-          {content.description && (
-            <p
-              className="target-card-reveal-item"
-              style={{
-                margin: '10px 0 0',
-                animationDelay: `${revealIndex++ * 25}ms`,
-              }}
-            >
-              {content.description}
-            </p>
-          )}
+            {shownTab === 'lessons' && (
+              <>
+                <strong className="target-card-section-title">Lessons</strong>
+                <div className="target-card-lesson-list">
+                  {primaryLessons.map((association) => (
+                    <LessonRow
+                      key={association.lessonId}
+                      association={association}
+                      lesson={lessonsById.get(association.lessonId)}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
 
-          {content.notes?.map((note, index) => (
-            <p
-              key={index}
-              className="target-card-reveal-item"
-              style={{
-                margin: '12px 0 0',
-                animationDelay: `${revealIndex++ * 25}ms`,
-              }}
-            >
-              <MathText>{note}</MathText>
-            </p>
-          ))}
+            {shownTab === 'connections' && (
+              <>
+                <strong className="target-card-section-title">Connections</strong>
+                <div className="target-card-lesson-list">
+                  {connections.map((association) => (
+                    <LessonRow
+                      key={`${association.lessonId}-${association.relationship}`}
+                      association={association}
+                      lesson={lessonsById.get(association.lessonId)}
+                      showRelationship
+                    />
+                  ))}
+                </div>
+              </>
+            )}
 
-          {content.resources?.map((resource) => (
-            <p
-              key={resource.url}
-              className="target-card-reveal-item"
-              style={{
-                margin: '8px 0 0',
-                animationDelay: `${revealIndex++ * 25}ms`,
-              }}
-            >
-              <a
-                href={resource.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(event) => event.stopPropagation()}
+            {shownTab === 'resources' && (
+              <>
+                <strong className="target-card-section-title">Resources</strong>
+                <div className="target-card-resource-list">
+                  {resources.map((resource, index) => (
+                    <ResourceItem key={index} resource={resource} />
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="target-card-tabs" role="tablist" aria-label={`${id} details`}>
+            {availableTabs.map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                role="tab"
+                aria-selected={shownTab === tab}
+                className={`target-card-tab${shownTab === tab ? ' target-card-tab--active' : ''}`}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  selectTab(tab)
+                }}
               >
-                {resource.label}
-              </a>
-            </p>
-          ))}
+                {tabLabels[tab]}
+              </button>
+            ))}
+          </div>
         </div>
       )}
     </div>
