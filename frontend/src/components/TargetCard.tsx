@@ -1,14 +1,23 @@
-import type { LearningTargetContent } from '../courses/math1310TargetContent'
 import { MathText } from './MathText'
+import type { LearningTargetContent } from '../courses/math1310TargetContent'
 
 type TargetCardProps = {
   id: string
   name: string
   expanded: boolean
   content?: LearningTargetContent
+  contentVisible?: boolean
 }
 
-export function TargetCard({ id, name, expanded, content }: TargetCardProps) {
+export function TargetCard({
+  id,
+  name,
+  expanded,
+  content,
+  contentVisible = true,
+}: TargetCardProps) {
+  let revealIndex = 0
+
   return (
     <div style={{ width: '100%', minWidth: 0 }}>
       <div
@@ -29,7 +38,8 @@ export function TargetCard({ id, name, expanded, content }: TargetCardProps) {
 
       {expanded && content && (
         <div
-          className="nodrag nowheel"
+          aria-hidden={!contentVisible}
+          className={`nodrag nowheel target-card-details${contentVisible ? ' target-card-details--visible' : ''}`}
           style={{
             borderTop: '1px solid #d8d8dd',
             marginTop: 16,
@@ -39,14 +49,27 @@ export function TargetCard({ id, name, expanded, content }: TargetCardProps) {
             textAlign: 'left',
           }}
         >
-          <strong>
+          <strong
+            className="target-card-reveal-item"
+            style={{ animationDelay: `${revealIndex++ * 25}ms` }}
+          >
             {content.objectives.length > 0 ? 'Learning objectives' : 'About this target'}
           </strong>
 
           {content.objectives.length > 0 && (
-            <ul style={{ margin: '10px 0 0', paddingLeft: 20 }}>
+            <ul
+              className="target-card-objectives"
+              style={{ margin: '10px 0 0', paddingLeft: 20 }}
+            >
               {content.objectives.map((objective, index) => (
-                <li key={index} style={{ marginBottom: 8 }}>
+                <li
+                  key={index}
+                  className="target-card-reveal-item"
+                  style={{
+                    marginBottom: 8,
+                    animationDelay: `${revealIndex++ * 25}ms`,
+                  }}
+                >
                   <MathText>{objective}</MathText>
                 </li>
               ))}
@@ -54,17 +77,39 @@ export function TargetCard({ id, name, expanded, content }: TargetCardProps) {
           )}
 
           {content.description && (
-            <p style={{ margin: '10px 0 0' }}>{content.description}</p>
+            <p
+              className="target-card-reveal-item"
+              style={{
+                margin: '10px 0 0',
+                animationDelay: `${revealIndex++ * 25}ms`,
+              }}
+            >
+              {content.description}
+            </p>
           )}
 
           {content.notes?.map((note, index) => (
-            <p key={index} style={{ margin: '12px 0 0' }}>
+            <p
+              key={index}
+              className="target-card-reveal-item"
+              style={{
+                margin: '12px 0 0',
+                animationDelay: `${revealIndex++ * 25}ms`,
+              }}
+            >
               <MathText>{note}</MathText>
             </p>
           ))}
 
           {content.resources?.map((resource) => (
-            <p key={resource.url} style={{ margin: '8px 0 0' }}>
+            <p
+              key={resource.url}
+              className="target-card-reveal-item"
+              style={{
+                margin: '8px 0 0',
+                animationDelay: `${revealIndex++ * 25}ms`,
+              }}
+            >
               <a
                 href={resource.url}
                 target="_blank"

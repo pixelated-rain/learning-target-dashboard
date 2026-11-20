@@ -34,50 +34,18 @@ export function restoreRankPositions(
   })
 }
 
-export function centerExpandedWidth(
-  nodes: Node[],
-  expandedId: string,
-  snapshot: RankPositionSnapshot,
-  expandedWidth: number,
-): Node[] {
-  const originalPosition = snapshot.get(expandedId)
-
-  if (originalPosition === undefined) {
-    return nodes
-  }
-
-  return nodes.map((node) =>
-    node.id === expandedId
-      ? {
-          ...node,
-          position: {
-            x: originalPosition.x - (expandedWidth - NODE_WIDTH) / 2,
-            y: originalPosition.y,
-          },
-        }
-      : node,
-  )
-}
-
-export function reflowExpandedRank(
+export function reflowExpandedRankToSize(
   nodes: Node[],
   expandedId: string,
   ranks: Map<string, number>,
   snapshot: RankPositionSnapshot,
+  expandedWidth: number,
+  expandedHeight: number,
 ): Node[] {
-  const expandedNode = nodes.find((node) => node.id === expandedId)
   const originalPosition = snapshot.get(expandedId)
   const rank = ranks.get(expandedId)
-  const expandedWidth = expandedNode?.measured?.width
-  const expandedHeight = expandedNode?.measured?.height
 
-  if (
-    expandedNode === undefined ||
-    originalPosition === undefined ||
-    rank === undefined ||
-    expandedWidth === undefined ||
-    expandedHeight === undefined
-  ) {
+  if (originalPosition === undefined || rank === undefined) {
     return nodes
   }
 
@@ -119,27 +87,16 @@ export function reflowExpandedRank(
     cursor = y + NODE_HEIGHT + ROW_GAP
   }
 
-  let changed = false
-
-  const nextNodes = nodes.map((node) => {
+  return nodes.map((node) => {
     const y = yPositions.get(node.id)
-
-    if (y === undefined) {
-      return node
-    }
+    if (y === undefined) return node
 
     const original = snapshot.get(node.id)!
-    const position = node.id === expandedId
-      ? expandedPosition
-      : { x: original.x, y }
-
-    if (node.position.x === position.x && node.position.y === position.y) {
-      return node
+    return {
+      ...node,
+      position: node.id === expandedId
+        ? expandedPosition
+        : { x: original.x, y },
     }
-
-    changed = true
-    return { ...node, position }
   })
-
-  return changed ? nextNodes : nodes
 }

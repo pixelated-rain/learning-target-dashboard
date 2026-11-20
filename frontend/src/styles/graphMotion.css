@@ -1,0 +1,87 @@
+.graph-motion-edge {
+  transition: opacity 80ms ease;
+}
+
+.graph-motion-edge--hidden {
+  opacity: 0;
+}
+
+.graph-motion-edge--drawing {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: graph-edge-draw var(--graph-edge-draw-duration, 300ms) linear forwards;
+}
+
+.graph-motion-edge--flowing {
+  stroke-dasharray: 5 5;
+  animation: graph-flow-dashes 700ms linear infinite;
+}
+
+.react-flow .react-flow__node .target-card-objectives {
+  list-style: disc outside;
+  color: var(--graph-text);
+}
+
+.react-flow .react-flow__node .target-card-objectives li,
+.react-flow .react-flow__node .target-card-objectives li::marker {
+  color: var(--graph-text);
+}
+
+.target-card-details {
+  opacity: 0;
+}
+
+.target-card-details--visible {
+  opacity: 1;
+}
+
+.target-card-reveal-item {
+  opacity: 0;
+  clip-path: inset(0 100% 0 0);
+}
+
+.target-card-details--visible .target-card-reveal-item {
+  animation: target-card-reveal 120ms ease-out forwards;
+}
+
+.graph-root--reduced-motion .graph-motion-edge,
+.graph-root--reduced-motion .target-card-details,
+.graph-root--reduced-motion .target-card-reveal-item {
+  transition: none;
+  animation: none;
+}
+
+.graph-root--reduced-motion .target-card-details,
+.graph-root--reduced-motion .target-card-reveal-item {
+  opacity: 1;
+  clip-path: none;
+}
+
+@keyframes graph-flow-dashes {
+  from {
+    stroke-dashoffset: 10;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes graph-edge-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes target-card-reveal {
+  from {
+    opacity: 0;
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+  }
+}
