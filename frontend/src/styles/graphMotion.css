@@ -262,3 +262,134 @@
     transform: translateX(0);
   }
 }
+
+.target-card-header--expanded {
+  position: relative;
+  margin: -18px -20px 0;
+  padding: 14px 20px 12px;
+  border-bottom: 1px solid var(--graph-border);
+  background: rgb(255 255 255 / 0.035);
+  box-shadow: inset 0 -1px 0 rgb(255 255 255 / 0.025);
+  cursor: pointer;
+}
+
+.target-card-header--expanded + .target-card-details {
+  margin-top: 0;
+  border-top: 0;
+  padding-top: 12px;
+}
+
+.react-flow .react-flow__node.target-node--intro-hidden .target-card-shell {
+  opacity: 0;
+  transform: scale(0.78);
+}
+
+.react-flow .react-flow__node.target-node--intro-visible .target-card-shell {
+  transform-origin: center;
+  animation: target-card-pop 180ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+
+.graph-root--reduced-motion
+  .react-flow__node.target-node--intro-hidden
+  .target-card-shell,
+.graph-root--reduced-motion
+  .react-flow__node.target-node--intro-visible
+  .target-card-shell {
+  opacity: 1;
+  transform: none;
+  animation: none;
+}
+
+@keyframes target-card-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.78);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/*
+ * During the intro, keep React Flow's positioned node wrapper completely
+ * motionless. A temporary card skin and the card contents scale together so
+ * the visible card can bubble up without disturbing handle geometry.
+ */
+.react-flow .react-flow__node.target-node--intro-hidden,
+.react-flow .react-flow__node.target-node--intro-popping,
+.react-flow .react-flow__node.target-node--intro-settled {
+  isolation: isolate;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.react-flow .react-flow__node.target-node--intro-hidden::before,
+.react-flow .react-flow__node.target-node--intro-popping::before,
+.react-flow .react-flow__node.target-node--intro-settled::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  box-sizing: border-box;
+  border: 1px solid var(--graph-border);
+  border-radius: inherit;
+  background: var(--graph-card);
+  transform-origin: 50% 50%;
+  pointer-events: none;
+}
+
+.react-flow .react-flow__node.target-node--intro-hidden::before,
+.react-flow .react-flow__node.target-node--intro-hidden .target-card-shell {
+  opacity: 0;
+  transform: scale(0.01);
+  transform-origin: 50% 50%;
+}
+
+.react-flow .react-flow__node.target-node--intro-popping::before,
+.react-flow .react-flow__node.target-node--intro-popping .target-card-shell {
+  transform-origin: 50% 50%;
+  animation:
+    target-card-bubble-grow 560ms cubic-bezier(0.16, 1, 0.3, 1) forwards,
+    target-card-bubble-settle 650ms 560ms cubic-bezier(0.45, 0, 0.2, 1)
+      forwards;
+}
+
+.react-flow .react-flow__node.target-node--intro-settled::before,
+.react-flow .react-flow__node.target-node--intro-settled .target-card-shell {
+  opacity: 1;
+  transform: scale(1);
+}
+
+@keyframes target-card-bubble-grow {
+  0% {
+    opacity: 0;
+    transform: scale(0.01);
+  }
+  18% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1.18);
+  }
+}
+
+@keyframes target-card-bubble-settle {
+  from {
+    transform: scale(1.18);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+.graph-root--reduced-motion
+  .react-flow__node.target-node--intro-popping::before,
+.graph-root--reduced-motion
+  .react-flow__node.target-node--intro-popping .target-card-shell {
+  animation: none;
+  opacity: 1;
+  transform: none;
+}

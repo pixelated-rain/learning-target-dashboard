@@ -171,7 +171,7 @@ export function TargetCard({
   return (
     <div className="target-card-shell">
       <div
-        className="target-card-header"
+        className={`target-card-header${expanded ? ' target-card-header--expanded' : ''}`}
         style={{ alignItems: expanded ? 'flex-start' : 'center' }}
       >
         <strong style={{ fontSize: expanded ? 26 : 24, lineHeight: 1.1 }}>
@@ -186,7 +186,16 @@ export function TargetCard({
         <div
           aria-hidden={!contentVisible}
           className={`nodrag nowheel target-card-details${contentVisible ? ' target-card-details--visible' : ''}`}
-          onClick={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            const element = event.target as HTMLElement
+            if (
+              element.closest(
+                'a, button, input, select, textarea, [role="tab"], [contenteditable="true"]',
+              )
+            ) {
+              event.stopPropagation()
+            }
+          }}
           onKeyDown={(event) => event.stopPropagation()}
         >
           <div

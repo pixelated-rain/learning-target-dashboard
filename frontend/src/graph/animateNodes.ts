@@ -1,6 +1,7 @@
 import type { Node } from '@xyflow/react'
 
 type FrameHandler = (nodes: Node[]) => void
+type ContinuePredicate = () => boolean
 
 function lerp(start: number, end: number, progress: number) {
   return start + (end - start) * progress
@@ -20,9 +21,10 @@ export function animateNodes(
   toNodes: Node[],
   duration: number,
   onFrame: FrameHandler,
+  shouldContinue: ContinuePredicate = () => true,
 ): Promise<void> {
   if (duration <= 0) {
-    onFrame(toNodes)
+    if (shouldContinue()) onFrame(toNodes)
     return Promise.resolve()
   }
 
@@ -32,6 +34,11 @@ export function animateNodes(
     const start = performance.now()
 
     function frame(now: number) {
+      if (!shouldContinue()) {
+        resolve()
+        return
+      }
+
       const rawProgress = Math.min((now - start) / duration, 1)
       const progress = easeOutCubic(rawProgress)
 

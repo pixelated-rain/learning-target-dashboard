@@ -66,6 +66,42 @@ type ExpansionPhase =
   | 'collapsing'
 
 type EdgeBandPhase = 'normal' | 'hidden' | 'drawing'
+type IntroPhase = 'bubbling' | 'edges' | 'done'
+
+type ViewportSnapshot = {
+  x: number
+  y: number
+  zoom: number
+}
+
+type ViewportController = {
+  getViewport: () => ViewportSnapshot
+  setViewport: (
+    viewport: ViewportSnapshot,
+    options?: {
+      duration?: number
+      ease?: (progress: number) => number
+      interpolate?: 'smooth' | 'linear'
+    },
+  ) => void
+  fitView: (options?: { padding?: number; duration?: number }) => void
+}
+
+const INTRO_POP_BUCKET_MS = 90
+const INTRO_POP_BUCKETS = 7
+const INTRO_POP_GROW_DURATION = 560
+const INTRO_POP_SETTLE_DURATION = 650
+const INTRO_POP_DURATION =
+  INTRO_POP_GROW_DURATION + INTRO_POP_SETTLE_DURATION
+const INTRO_EDGE_DRAW_DELAY = 650
+const EXPANSION_CAMERA_DURATION = 520
+const EXPANSION_ZOOM_FLOOR = 1.35
+
+function easeInOutCubic(progress: number) {
+  return progress < 0.5
+    ? 4 * progress * progress * progress
+    : 1 - Math.pow(-2 * progress + 2, 3) / 2
+}
 
 function targetNodeClassName(role: RelationRole) {
   return `target-node target-node--${role}`
@@ -273,11 +309,6 @@ function nextFrame() {
   return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
 }
 
-type ManualPositionSnapshot = {
-  id: string
-  position: { x: number; y: number }
-}
-
 function centerExpandedCardToSize(
   nodes: Node[],
   id: string,
@@ -297,15 +328,32 @@ function centerExpandedCardToSize(
   )
 }
 
-function restoreManualPosition(
-  nodes: Node[],
-  snapshot: ManualPositionSnapshot,
-): Node[] {
-  return nodes.map((node) =>
-    node.id === snapshot.id
-      ? { ...node, position: { ...snapshot.position } }
-      : node,
-  )
+function numericNodeStyle(
+  node: Node,
+  key: 'width' | 'height',
+  fallback: number,
+) {
+  const value = node.style?.[key]
+  return typeof value === 'number' ? value : fallback
+}
+
+function hideExpandedContent(nodes: Node[]): Node[] {
+  return nodes.map((node) => {
+    if (node.data.expanded !== true || node.data.contentVisible !== true) {
+      return node
+    }
+
+    const target = targetsById.get(node.id)!
+
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        contentVisible: false,
+        label: targetCard(target, true, false),
+      },
+    }
+  })
 }
 
 function edgeTouchesNode(sourceId: string, targetId: string, nodeId: string) {
@@ -336,6 +384,7 @@ function edgeTouchesOrCrossesRank(
 
 function App() {
   const graphRootRef = useRef<HTMLDivElement | null>(null)
+  const { reducedMotion } = useMotionPreference()
   const [viewportSize, setViewportSize] = useState(() => ({
     width: window.innerWidth,
     height: window.innerHeight,
@@ -350,18 +399,30 @@ function App() {
   const [phase, setPhase] = useState<ExpansionPhase>('idle')
   const [edgeBandPhase, setEdgeBandPhase] = useState<EdgeBandPhase>('normal')
   const [movingRank, setMovingRank] = useState<number | null>(null)
-  const [movingTargetId, setMovingTargetId] = useState<string | null>(null)
-  const [secondaryMovingTargetId, setSecondaryMovingTargetId] = useState<
-    string | null
-  >(null)
+  const [movingTargetIds, setMovingTargetIds] = useState<string[]>([])
+  const [flowReady, setFlowReady] = useState(false)
+  const [introPhase, setIntroPhase] = useState<IntroPhase>(
+    reducedMotion ? 'done' : 'bubbling',
+  )
+  const [introPoppingIds, setIntroPoppingIds] = useState<string[]>([])
+  const [introSettledIds, setIntroSettledIds] = useState<string[]>(
+    reducedMotion ? initialNodes.map((node) => node.id) : [],
+  )
 
   const rankSnapshot = useRef<RankPositionSnapshot | null>(null)
-  const manualPositionSnapshot = useRef<ManualPositionSnapshot | null>(null)
-  const switchingFromIdRef = useRef<string | null>(null)
   const measureRef = useRef<HTMLDivElement | null>(null)
   const nodesRef = useRef(nodes)
   const phaseRef = useRef<ExpansionPhase>(phase)
-  const { reducedMotion } = useMotionPreference()
+  const reactFlowRef = useRef<ViewportController | null>(null)
+  const manualTransitionGenerationRef = useRef(0)
+  const requestedOpenIdRef = useRef<string | null>(null)
+  const introGenerationRef = useRef(0)
+  const lastPointerClickRef = useRef<{ id: string; at: number } | null>(null)
+  const manualBasePositionsRef = useRef(
+    new Map(
+      initialNodes.map((node) => [node.id, { ...node.position }]),
+    ),
+  )
 
   const graphViewport = useMemo(
     () => graphViewportBounds(viewportSize.width, viewportSize.height),
@@ -392,7 +453,41 @@ function App() {
     nodesRef.current = nodes
   }, [nodes])
 
-  const focusedId = draggingId ?? expandedId ?? keyboardFocusedId ?? hoveredId
+  const renderedNodes = useMemo(() => {
+    const poppingIds = new Set(introPoppingIds)
+    const settledIds = new Set(introSettledIds)
+
+    return nodes.map((node) => {
+      let className = node.className ?? ''
+      let style = { ...node.style }
+
+      if (introPhase !== 'done') {
+        const popping = poppingIds.has(node.id)
+        const settled = settledIds.has(node.id)
+        const visible = popping || settled
+        const introClass = settled
+          ? 'target-node--intro-settled'
+          : popping
+            ? 'target-node--intro-popping'
+            : 'target-node--intro-hidden'
+
+        className = `${className} ${introClass}`.trim()
+        style = {
+          ...style,
+          pointerEvents: visible ? node.style?.pointerEvents : 'none',
+        }
+      }
+
+      return {
+        ...node,
+        className,
+        style,
+      }
+    })
+  }, [introPhase, introPoppingIds, introSettledIds, nodes])
+
+  const focusedId =
+    draggingId ?? expandedId ?? keyboardFocusedId ?? hoveredId
 
   const edges = useMemo(() => {
     const decoratedEdges = baseEdges.map((edge) => {
@@ -410,16 +505,27 @@ function App() {
       const affectedByAnimation = USE_SIMPLE_LAYOUT
         ? movingRank !== null &&
           edgeTouchesOrCrossesRank(edge.source, edge.target, movingRank)
-        : (movingTargetId !== null &&
-            edgeTouchesNode(edge.source, edge.target, movingTargetId)) ||
-          (secondaryMovingTargetId !== null &&
-            edgeTouchesNode(edge.source, edge.target, secondaryMovingTargetId))
+        : movingTargetIds.some((id) =>
+            edgeTouchesNode(edge.source, edge.target, id),
+          )
+      const introEdgePhase =
+        introPhase === 'bubbling'
+          ? 'hidden'
+          : introPhase === 'edges'
+            ? 'drawing'
+            : null
 
       return {
         ...edge,
         data: {
-          phase: affectedByAnimation ? edgeBandPhase : 'normal',
-          flowing: focused && !reducedMotion,
+          phase:
+            introEdgePhase ??
+            (affectedByAnimation ? edgeBandPhase : 'normal'),
+          flowing:
+            focused &&
+            !reducedMotion &&
+            introEdgePhase === null &&
+            introPhase === 'done',
         },
         style: focused
           ? {
@@ -443,15 +549,118 @@ function App() {
   }, [
     edgeBandPhase,
     focusedId,
+    introPhase,
     movingRank,
-    movingTargetId,
-    secondaryMovingTargetId,
+    movingTargetIds,
     reducedMotion,
   ])
 
   useEffect(() => {
     setNodes((current) => setFocusRoles(current, focusedId))
   }, [focusedId, setNodes])
+
+  useEffect(() => {
+    if (!flowReady) return
+
+    if (reducedMotion) {
+      introGenerationRef.current += 1
+      setIntroPoppingIds([])
+      setIntroSettledIds(initialNodes.map((node) => node.id))
+      setIntroPhase('done')
+      return
+    }
+
+    const generation = introGenerationRef.current + 1
+    introGenerationRef.current = generation
+
+    void (async () => {
+      setIntroPoppingIds([])
+      setIntroSettledIds([])
+      setIntroPhase('bubbling')
+
+      const schedule = initialNodes
+        .map((node) => ({
+          id: node.id,
+          at:
+            Math.floor(Math.random() * INTRO_POP_BUCKETS) *
+            INTRO_POP_BUCKET_MS,
+        }))
+        .sort((a, b) => a.at - b.at)
+
+      const bubbleSequence = async () => {
+        let previousAt = 0
+        let index = 0
+
+        while (index < schedule.length) {
+          const at = schedule[index].at
+          await sleep(at - previousAt)
+
+          if (introGenerationRef.current !== generation) return
+
+          const ids: string[] = []
+          while (index < schedule.length && schedule[index].at === at) {
+            ids.push(schedule[index].id)
+            index += 1
+          }
+
+          setIntroPoppingIds((current) => [...current, ...ids])
+
+          void (async () => {
+            await sleep(INTRO_POP_DURATION)
+            if (introGenerationRef.current !== generation) return
+
+            setIntroPoppingIds((current) =>
+              current.filter((id) => !ids.includes(id)),
+            )
+            setIntroSettledIds((current) => [...current, ...ids])
+          })()
+
+          previousAt = at
+        }
+
+        await sleep(INTRO_POP_DURATION)
+
+        if (introGenerationRef.current !== generation) return
+        setIntroPoppingIds([])
+        setIntroSettledIds(initialNodes.map((node) => node.id))
+      }
+
+      const edgeSequence = async () => {
+        await sleep(INTRO_EDGE_DRAW_DELAY)
+        if (introGenerationRef.current !== generation) return
+
+        setIntroPhase('edges')
+        await sleep(motionTiming.edgeDrawMax)
+      }
+
+      await Promise.all([
+        bubbleSequence(),
+        edgeSequence(),
+      ])
+
+      if (introGenerationRef.current !== generation) return
+      setIntroPoppingIds([])
+      setIntroSettledIds(initialNodes.map((node) => node.id))
+      setIntroPhase('done')
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          reactFlowRef.current?.fitView({
+            padding: 0.08,
+            duration: reducedMotion
+              ? 0
+              : EXPANSION_CAMERA_DURATION,
+          })
+        })
+      })
+    })()
+
+    return () => {
+      if (introGenerationRef.current === generation) {
+        introGenerationRef.current += 1
+      }
+    }
+  }, [flowReady, reducedMotion])
 
   // Render the requested card invisibly at its final width so its content-driven
   // expanded height is known before any visible node geometry changes.
@@ -463,13 +672,12 @@ function App() {
 
     setPendingOpenId(null)
 
-    const switchingFromId = switchingFromIdRef.current
-    if (
-      !USE_SIMPLE_LAYOUT &&
-      switchingFromId !== null &&
-      switchingFromId !== id
-    ) {
-      void switchExpandedCardAnimated(switchingFromId, id, height)
+    if (!USE_SIMPLE_LAYOUT) {
+      void transitionManualToTarget(
+        id,
+        height,
+        manualTransitionGenerationRef.current,
+      )
       return
     }
 
@@ -486,91 +694,202 @@ function App() {
     setNodes(nextNodes)
   }
 
-  async function rerouteToCurrentGeometry() {
-    // Built-in React Flow Bézier edges follow visible node geometry directly.
+  function cancelIntro() {
+    if (introPhase === 'done') return
+
+    introGenerationRef.current += 1
+    setIntroPoppingIds([])
+    setIntroSettledIds(initialNodes.map((node) => node.id))
+    setIntroPhase('done')
+
+    const instance = reactFlowRef.current
+    if (instance !== null) {
+      void instance.setViewport(instance.getViewport(), { duration: 0 })
+    }
+  }
+
+  function manualBasePosition(id: string) {
+    return (
+      manualBasePositionsRef.current.get(id) ??
+      layout.positions.get(id) ??
+      { x: 0, y: 0 }
+    )
+  }
+
+  function rememberManualBasePosition(node: Node) {
+    if (USE_SIMPLE_LAYOUT) return
+
+    const width = numericNodeStyle(node, 'width', NODE_WIDTH)
+    const height = numericNodeStyle(node, 'height', NODE_HEIGHT)
+
+    manualBasePositionsRef.current.set(node.id, {
+      x: node.position.x + (width - NODE_WIDTH) / 2,
+      y: node.position.y + (height - NODE_HEIGHT) / 2,
+    })
+  }
+
+  function focusViewportOnPosition(
+    position: { x: number; y: number },
+    width: number,
+    height: number,
+  ) {
+    const instance = reactFlowRef.current
+    if (instance === null) return
+
+    const start = instance.getViewport()
+    const zoom = Math.max(
+      start.zoom,
+      graphViewport.minZoom,
+      EXPANSION_ZOOM_FLOOR,
+    )
+    const centerX = position.x + width / 2
+    const centerY = position.y + height / 2
+    const target: ViewportSnapshot = {
+      x: viewportSize.width / 2 - centerX * zoom,
+      y: viewportSize.height / 2 - centerY * zoom,
+      zoom,
+    }
+
+    instance.setViewport(target, {
+      duration: reducedMotion ? 0 : EXPANSION_CAMERA_DURATION,
+      ease: easeInOutCubic,
+      interpolate: 'smooth',
+    })
+  }
+
+  function manualTransitionAffectedIds(nodes: Node[], toId: string | null) {
+    const ids = new Set<string>()
+
+    for (const node of nodes) {
+      const width = numericNodeStyle(node, 'width', NODE_WIDTH)
+      const height = numericNodeStyle(node, 'height', NODE_HEIGHT)
+
+      if (
+        node.data.expanded === true ||
+        Math.abs(width - NODE_WIDTH) > 0.5 ||
+        Math.abs(height - NODE_HEIGHT) > 0.5
+      ) {
+        ids.add(node.id)
+      }
+    }
+
+    if (toId !== null) ids.add(toId)
+    return [...ids]
+  }
+
+  function manualFinalNodes(
+    nodes: Node[],
+    toId: string | null,
+    expandedHeight?: number,
+  ) {
+    let nextNodes = setExpandedCard(nodes, toId, false, expandedHeight)
+
+    nextNodes = nextNodes.map((node) => ({
+      ...node,
+      position: { ...manualBasePosition(node.id) },
+    }))
+
+    if (toId !== null && expandedHeight !== undefined) {
+      nextNodes = centerExpandedCardToSize(
+        nextNodes,
+        toId,
+        manualBasePosition(toId),
+        expandedHeight,
+      )
+    }
+
+    return nextNodes
+  }
+
+  async function settleNodeGeometry() {
+    // Native React Flow Bézier edges follow node geometry directly. This frame
+    // boundary only lets the final node rectangles settle before edge drawing.
     await nextFrame()
   }
 
-  async function openExpandedCardAnimated(id: string, expandedHeight: number) {
-    if (phaseRef.current !== 'measuring') return
+  async function transitionManualToTarget(
+    toId: string | null,
+    expandedHeight: number | undefined,
+    generation: number,
+  ) {
+    if (USE_SIMPLE_LAYOUT) return
+    if (manualTransitionGenerationRef.current !== generation) return
 
-    if (!USE_SIMPLE_LAYOUT) {
-      const current = nodesRef.current
-      const originalNode = current.find((node) => node.id === id)
-      if (originalNode === undefined) return
+    const current = hideExpandedContent(
+      setFocusRoles(nodesRef.current, toId),
+    )
+    const affectedIds = manualTransitionAffectedIds(current, toId)
+    const finalNodes = manualFinalNodes(current, toId, expandedHeight)
 
-      const snapshot: ManualPositionSnapshot = {
-        id,
-        position: { ...originalNode.position },
-      }
-      manualPositionSnapshot.current = snapshot
-      setMovingTargetId(id)
+    setExpandedId(toId)
+    setMovingTargetIds(affectedIds)
+    setEdgeBandPhase('hidden')
+    commitNodes(current)
 
-      const focusedStart = setFocusRoles(current, id)
-      commitNodes(focusedStart)
-
-      const expanded = setExpandedCard(
-        focusedStart,
-        id,
-        false,
-        expandedHeight,
+    if (toId !== null) {
+      focusViewportOnPosition(
+        manualBasePosition(toId),
+        NODE_WIDTH,
+        NODE_HEIGHT,
       )
-      const finalNodes = centerExpandedCardToSize(
-        expanded,
-        id,
-        snapshot.position,
-        expandedHeight,
-      )
+    }
 
-      if (reducedMotion) {
-        const visible = setExpandedCard(finalNodes, id, true, expandedHeight)
-        commitNodes(visible)
-        setEdgeBandPhase('normal')
-        setMovingTargetId(null)
-        setSecondaryMovingTargetId(null)
-        changePhase('expanded')
-        return
-      }
-
-      changePhase('hiding-edges')
-      setEdgeBandPhase('hidden')
-      await sleep(motionTiming.edgeFade)
-
-      changePhase('moving')
-      await animateNodes(
-        focusedStart,
-        finalNodes,
-        motionTiming.layout,
-        commitNodes,
-      )
-
-      await nextFrame()
-      await nextFrame()
-      await rerouteToCurrentGeometry()
-      await nextFrame()
-
-      changePhase('drawing-edges')
-      setEdgeBandPhase('drawing')
-
-      const visible = setExpandedCard(
-        nodesRef.current,
-        id,
-        true,
-        expandedHeight,
-      )
+    if (reducedMotion) {
+      const visible =
+        toId !== null && expandedHeight !== undefined
+          ? setExpandedCard(finalNodes, toId, true, expandedHeight)
+          : finalNodes
       commitNodes(visible)
+      setEdgeBandPhase('normal')
+      setMovingTargetIds([])
+      changePhase(toId === null ? 'idle' : 'expanded')
+      return
+    }
+
+    changePhase(toId === null ? 'collapsing' : 'hiding-edges')
+    await sleep(motionTiming.edgeFade)
+    if (manualTransitionGenerationRef.current !== generation) return
+
+    changePhase('moving')
+    await animateNodes(
+      current,
+      finalNodes,
+      motionTiming.layout,
+      commitNodes,
+      () => manualTransitionGenerationRef.current === generation,
+    )
+    if (manualTransitionGenerationRef.current !== generation) return
+
+    await nextFrame()
+    if (manualTransitionGenerationRef.current !== generation) return
+    await settleNodeGeometry()
+    if (manualTransitionGenerationRef.current !== generation) return
+
+    changePhase('drawing-edges')
+    setEdgeBandPhase('drawing')
+
+    if (toId !== null && expandedHeight !== undefined) {
+      commitNodes(
+        setExpandedCard(nodesRef.current, toId, true, expandedHeight),
+      )
 
       await Promise.all([
         sleep(motionTiming.edgeDrawMax),
         sleep(motionTiming.contentReveal),
       ])
-
-      setEdgeBandPhase('normal')
-      setMovingTargetId(null)
-      setSecondaryMovingTargetId(null)
-      changePhase('expanded')
-      return
+    } else {
+      await sleep(motionTiming.edgeDrawMax)
     }
+
+    if (manualTransitionGenerationRef.current !== generation) return
+
+    setEdgeBandPhase('normal')
+    setMovingTargetIds([])
+    changePhase(toId === null ? 'idle' : 'expanded')
+  }
+
+  async function openExpandedCardAnimated(id: string, expandedHeight: number) {
+    if (phaseRef.current !== 'measuring') return
 
     const current = nodesRef.current
     const snapshot = snapshotRankPositions(current, id, ranks)
@@ -598,6 +917,14 @@ function App() {
       EXPANDED_WIDTH,
       expandedHeight,
     )
+    const finalFocusedNode = finalNodes.find((node) => node.id === id)
+    if (finalFocusedNode !== undefined) {
+      focusViewportOnPosition(
+        finalFocusedNode.position,
+        EXPANDED_WIDTH,
+        expandedHeight,
+      )
+    }
 
     if (reducedMotion) {
       const visible = setExpandedCard(finalNodes, id, true, expandedHeight)
@@ -624,7 +951,7 @@ function App() {
     // hidden, then route exactly once against that settled geometry.
     await nextFrame()
     await nextFrame()
-    await rerouteToCurrentGeometry()
+    await settleNodeGeometry()
     await nextFrame()
 
     changePhase('drawing-edges')
@@ -648,113 +975,6 @@ function App() {
     changePhase('expanded')
   }
 
-  async function switchExpandedCardAnimated(
-    fromId: string,
-    toId: string,
-    expandedHeight: number,
-  ) {
-    if (phaseRef.current !== 'measuring') return
-    if (USE_SIMPLE_LAYOUT) return
-
-    const fromSnapshot = manualPositionSnapshot.current
-    const current = nodesRef.current
-    const fromNode = current.find((node) => node.id === fromId)
-    const toNode = current.find((node) => node.id === toId)
-
-    if (
-      fromSnapshot === null ||
-      fromSnapshot.id !== fromId ||
-      fromNode === undefined ||
-      toNode === undefined
-    ) {
-      switchingFromIdRef.current = null
-      changePhase('expanded')
-      return
-    }
-
-    const fromExpandedHeight = typeof fromNode.style?.height === 'number'
-      ? fromNode.style.height
-      : NODE_HEIGHT
-    const toSnapshot: ManualPositionSnapshot = {
-      id: toId,
-      position: { ...toNode.position },
-    }
-
-    const focusedStart = setFocusRoles(current, toId)
-    const contentHidden = setExpandedCard(
-      focusedStart,
-      fromId,
-      false,
-      fromExpandedHeight,
-    )
-
-    let finalNodes = restoreManualPosition(contentHidden, fromSnapshot)
-    finalNodes = setExpandedCard(finalNodes, toId, false, expandedHeight)
-    finalNodes = centerExpandedCardToSize(
-      finalNodes,
-      toId,
-      toSnapshot.position,
-      expandedHeight,
-    )
-
-    if (reducedMotion) {
-      const visible = setExpandedCard(finalNodes, toId, true, expandedHeight)
-      commitNodes(visible)
-      manualPositionSnapshot.current = toSnapshot
-      switchingFromIdRef.current = null
-      setExpandedId(toId)
-      setMovingTargetId(null)
-      setSecondaryMovingTargetId(null)
-      setEdgeBandPhase('normal')
-      changePhase('expanded')
-      return
-    }
-
-    commitNodes(contentHidden)
-    setExpandedId(toId)
-    setMovingTargetId(fromId)
-    setSecondaryMovingTargetId(toId)
-    setEdgeBandPhase('hidden')
-    await sleep(motionTiming.edgeFade)
-
-    changePhase('moving')
-    await animateNodes(
-      contentHidden,
-      finalNodes,
-      motionTiming.layout,
-      commitNodes,
-    )
-
-    await nextFrame()
-    await nextFrame()
-    await rerouteToCurrentGeometry()
-    await nextFrame()
-
-    changePhase('drawing-edges')
-    setEdgeBandPhase('drawing')
-
-    const visible = setExpandedCard(
-      nodesRef.current,
-      toId,
-      true,
-      expandedHeight,
-    )
-    commitNodes(visible)
-
-    await Promise.all([
-      sleep(motionTiming.edgeDrawMax),
-      sleep(motionTiming.contentReveal),
-    ])
-
-    setEdgeBandPhase('normal')
-    setMovingTargetId(null)
-    setSecondaryMovingTargetId(null)
-
-    manualPositionSnapshot.current = toSnapshot
-    switchingFromIdRef.current = null
-    changePhase('expanded')
-  }
-
   async function closeExpandedCardAnimated(animateEdgeDraw = true) {
     const id = expandedId
 
@@ -762,65 +982,11 @@ function App() {
     if (phaseRef.current !== 'expanded') return
 
     if (!USE_SIMPLE_LAYOUT) {
-      const snapshot = manualPositionSnapshot.current
-      if (snapshot === null || snapshot.id !== id) return
-
-      const expandedNode = nodesRef.current.find((node) => node.id === id)
-      const expandedHeight = typeof expandedNode?.style?.height === 'number'
-        ? expandedNode.style.height
-        : NODE_HEIGHT
-
-      if (reducedMotion) {
-        const restored = restoreManualPosition(nodesRef.current, snapshot)
-        const collapsed = setExpandedCard(restored, null, false)
-        commitNodes(collapsed)
-        manualPositionSnapshot.current = null
-        setExpandedId(null)
-        setMovingTargetId(null)
-        setSecondaryMovingTargetId(null)
-        setEdgeBandPhase('normal')
-        changePhase('idle')
-        return
-      }
-
-      changePhase('collapsing')
-
-      // Hide the details first while the expanded card stays in place.
-      commitNodes(setExpandedCard(nodesRef.current, id, false, expandedHeight))
-      await sleep(motionTiming.edgeFade)
-
-      setMovingTargetId(id)
-      setEdgeBandPhase('hidden')
-      await sleep(motionTiming.edgeFade)
-
-      const fromNodes = nodesRef.current
-      const restored = restoreManualPosition(fromNodes, snapshot)
-      const collapsed = setExpandedCard(restored, null, false)
-
-      await animateNodes(
-        fromNodes,
-        collapsed,
-        motionTiming.layout,
-        commitNodes,
-      )
-
-      await nextFrame()
-      await nextFrame()
-      await rerouteToCurrentGeometry()
-      await nextFrame()
-
-      if (animateEdgeDraw) {
-        changePhase('drawing-edges')
-        setEdgeBandPhase('drawing')
-        await sleep(motionTiming.edgeDrawMax)
-      }
-
-      setEdgeBandPhase('normal')
-      setMovingTargetId(null)
-      setSecondaryMovingTargetId(null)
-      manualPositionSnapshot.current = null
-      setExpandedId(null)
-      changePhase('idle')
+      const generation = manualTransitionGenerationRef.current + 1
+      manualTransitionGenerationRef.current = generation
+      requestedOpenIdRef.current = null
+      setPendingOpenId(null)
+      await transitionManualToTarget(null, undefined, generation)
       return
     }
 
@@ -870,7 +1036,7 @@ function App() {
 
     await nextFrame()
     await nextFrame()
-    await rerouteToCurrentGeometry()
+    await settleNodeGeometry()
     await nextFrame()
 
     if (animateEdgeDraw) {
@@ -886,26 +1052,57 @@ function App() {
     changePhase('idle')
   }
 
-  function requestOpen(id: string) {
-    if (phaseRef.current !== 'idle') return
-
-    switchingFromIdRef.current = null
+  function requestManualOpen(id: string) {
+    manualTransitionGenerationRef.current += 1
+    requestedOpenIdRef.current = id
     setExpandedId(id)
     changePhase('measuring')
     setPendingOpenId(id)
   }
 
-  async function handleNodeClick(id: string) {
-    if (phaseRef.current === 'expanded') {
-      if (id === expandedId) {
-        await closeExpandedCardAnimated()
+  function requestManualClose() {
+    const generation = manualTransitionGenerationRef.current + 1
+    manualTransitionGenerationRef.current = generation
+    requestedOpenIdRef.current = null
+    setPendingOpenId(null)
+    void transitionManualToTarget(null, undefined, generation)
+  }
+
+  function requestOpen(id: string) {
+    if (phaseRef.current !== 'idle') return
+
+    setExpandedId(id)
+    changePhase('measuring')
+    setPendingOpenId(id)
+  }
+
+  async function handleNodeClick(
+    id: string,
+    source: 'pointer' | 'keyboard' = 'pointer',
+  ) {
+    if (source === 'pointer') {
+      const now = performance.now()
+      const previous = lastPointerClickRef.current
+      lastPointerClickRef.current = { id, at: now }
+
+      // A browser double click produces two click events. Treat those as one
+      // target request so double clicking opens/closes once instead of toggling.
+      if (previous?.id === id && now - previous.at < 280) return
+    }
+
+    if (!USE_SIMPLE_LAYOUT) {
+      if (requestedOpenIdRef.current === id) {
+        if (phaseRef.current === 'expanded') requestManualClose()
         return
       }
 
-      if (!USE_SIMPLE_LAYOUT && expandedId !== null) {
-        switchingFromIdRef.current = expandedId
-        changePhase('measuring')
-        setPendingOpenId(id)
+      requestManualOpen(id)
+      return
+    }
+
+    if (phaseRef.current === 'expanded') {
+      if (id === expandedId) {
+        await closeExpandedCardAnimated()
         return
       }
 
@@ -925,12 +1122,64 @@ function App() {
     phase !== 'idle' && phase !== 'expanded'
 
   return (
-    <div className="dashboard-shell">
+    <div
+      className="dashboard-shell"
+      onPointerDownCapture={cancelIntro}
+      onWheelCapture={cancelIntro}
+      onKeyDownCapture={cancelIntro}
+    >
       <header className="dashboard-header">
         <button
           className="dashboard-reset-button"
           type="button"
-          onClick={() => window.location.reload()}
+          onClick={() => {
+            cancelIntro()
+            introGenerationRef.current += 1
+            manualTransitionGenerationRef.current += 1
+            requestedOpenIdRef.current = null
+            lastPointerClickRef.current = null
+            rankSnapshot.current = null
+
+            setPendingOpenId(null)
+            setExpandedId(null)
+            setHoveredId(null)
+            setKeyboardFocusedId(null)
+            setDraggingId(null)
+            setMovingRank(null)
+            setMovingTargetIds([])
+            setEdgeBandPhase('normal')
+            setIntroPoppingIds([])
+            setIntroSettledIds(initialNodes.map((node) => node.id))
+            setIntroPhase('done')
+            changePhase('idle')
+
+            manualBasePositionsRef.current = new Map(
+              initialNodes.map((node) => [
+                node.id,
+                { ...node.position },
+              ]),
+            )
+
+            commitNodes(
+              initialNodes.map((node) => ({
+                ...node,
+                position: { ...node.position },
+                data: { ...node.data },
+                style: { ...node.style },
+              })),
+            )
+
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                reactFlowRef.current?.fitView({
+                  padding: 0.08,
+                  duration: reducedMotion
+                    ? 0
+                    : EXPANSION_CAMERA_DURATION,
+                })
+              })
+            })
+          }}
         >
           Reset View
         </button>
@@ -980,7 +1229,7 @@ function App() {
 
           event.preventDefault()
           event.stopPropagation()
-          void handleNodeClick(id)
+          void handleNodeClick(id, 'keyboard')
         }}
         onFocusCapture={(event) => {
           const element = event.target as HTMLElement
@@ -1011,9 +1260,21 @@ function App() {
       )}
 
         <ReactFlow
-          nodes={nodes}
+          nodes={renderedNodes}
           edges={edges}
           onNodesChange={onNodesChange}
+          onInit={(instance) => {
+            reactFlowRef.current = {
+              getViewport: () => instance.getViewport(),
+              setViewport: (viewport, options) => {
+                void instance.setViewport(viewport, options)
+              },
+              fitView: (options) => {
+                void instance.fitView(options)
+              },
+            }
+            setFlowReady(true)
+          }}
           nodeExtent={graphViewport.extent}
           translateExtent={graphViewport.extent}
           minZoom={graphViewport.minZoom}
@@ -1022,20 +1283,26 @@ function App() {
           nodesFocusable
           edgesFocusable={false}
           autoPanOnNodeFocus
+          zoomOnDoubleClick={false}
           onNodeMouseEnter={(_, node) => setHoveredId(node.id)}
           onNodeMouseLeave={(_, node) => {
             setHoveredId((current) => current === node.id ? null : current)
           }}
           onNodeDragStart={(_, node) => setDraggingId(node.id)}
           onNodeDragStop={(_, node) => {
+            rememberManualBasePosition(node)
             setDraggingId((current) => current === node.id ? null : current)
           }}
           onNodeClick={(_, node) => {
             void handleNodeClick(node.id)
           }}
           onPaneClick={() => {
-            if (phaseRef.current === 'expanded') {
+            if (phaseRef.current !== 'expanded') return
+
+            if (USE_SIMPLE_LAYOUT) {
               void closeExpandedCardAnimated()
+            } else {
+              requestManualClose()
             }
           }}
           edgeTypes={edgeTypes}
