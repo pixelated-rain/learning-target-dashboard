@@ -33,10 +33,11 @@
 
 .target-card-details {
   opacity: 0;
+  clip-path: inset(0 100% 0 0);
 }
 
 .target-card-details--visible {
-  opacity: 1;
+  animation: target-card-reveal 300ms ease-out forwards;
 }
 
 .target-card-reveal-item {

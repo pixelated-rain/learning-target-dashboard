@@ -1,16 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
-  applyNodeChanges,
   MarkerType,
   Position,
   ReactFlow,
   useNodesState,
   type Node,
-  type NodeChange,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { SmartEdgeProvider } from '@tisoap/react-flow-smart-edge'
-import { MotionSmartEdge } from './components/MotionSmartEdge'
+import { MotionBezierEdge } from './components/MotionBezierEdge'
 import { TargetCard } from './components/TargetCard'
 import { math1310Course as course } from './courses/math1310Course'
 import { withMath1310ManualPositions } from './courses/math1310ManualLayout'
@@ -55,7 +52,7 @@ const layout = USE_SIMPLE_LAYOUT
 const ranks = USE_SIMPLE_LAYOUT
   ? calculateRanks(course.targets)
   : new Map<string, number>()
-const edgeTypes = { smart: MotionSmartEdge }
+const edgeTypes = { motionBezier: MotionBezierEdge }
 const targetsById = new Map(course.targets.map((target) => [target.id, target]))
 
 type ExpansionPhase =
@@ -201,7 +198,7 @@ const baseEdges = layout.edges.map(({ source, target }) => ({
   id: `${source}->${target}`,
   source,
   target,
-  type: 'smart',
+  type: 'motionBezier',
   style: {
     stroke: baseEdgeColor,
     strokeWidth: 1.5,
@@ -344,7 +341,6 @@ function App() {
     height: window.innerHeight,
   }))
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
-  const [routingNodes, setRoutingNodes] = useState<Node[]>(initialNodes)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [keyboardFocusedId, setKeyboardFocusedId] = useState<string | null>(null)
@@ -355,17 +351,16 @@ function App() {
   const [edgeBandPhase, setEdgeBandPhase] = useState<EdgeBandPhase>('normal')
   const [movingRank, setMovingRank] = useState<number | null>(null)
   const [movingTargetId, setMovingTargetId] = useState<string | null>(null)
-  const [routingRevision, setRoutingRevision] = useState(0)
+  const [secondaryMovingTargetId, setSecondaryMovingTargetId] = useState<
+    string | null
+  >(null)
 
   const rankSnapshot = useRef<RankPositionSnapshot | null>(null)
   const manualPositionSnapshot = useRef<ManualPositionSnapshot | null>(null)
+  const switchingFromIdRef = useRef<string | null>(null)
   const measureRef = useRef<HTMLDivElement | null>(null)
   const nodesRef = useRef(nodes)
   const phaseRef = useRef<ExpansionPhase>(phase)
-  const routingBatchResolver = useRef<(() => void) | null>(null)
-  const routingBatchTimeout = useRef<number | null>(null)
-  const lastRoutingBatchId = useRef(0)
-  const minimumRoutingBatchId = useRef(0)
   const { reducedMotion } = useMotionPreference()
 
   const graphViewport = useMemo(
@@ -397,16 +392,6 @@ function App() {
     nodesRef.current = nodes
   }, [nodes])
 
-  useEffect(() => {
-    return () => {
-      if (routingBatchTimeout.current !== null) {
-        window.clearTimeout(routingBatchTimeout.current)
-      }
-      routingBatchResolver.current?.()
-      routingBatchResolver.current = null
-    }
-  }, [])
-
   const focusedId = draggingId ?? expandedId ?? keyboardFocusedId ?? hoveredId
 
   const edges = useMemo(() => {
@@ -425,17 +410,16 @@ function App() {
       const affectedByAnimation = USE_SIMPLE_LAYOUT
         ? movingRank !== null &&
           edgeTouchesOrCrossesRank(edge.source, edge.target, movingRank)
-        : movingTargetId !== null &&
-          edgeTouchesNode(edge.source, edge.target, movingTargetId)
+        : (movingTargetId !== null &&
+            edgeTouchesNode(edge.source, edge.target, movingTargetId)) ||
+          (secondaryMovingTargetId !== null &&
+            edgeTouchesNode(edge.source, edge.target, secondaryMovingTargetId))
 
       return {
         ...edge,
         data: {
           phase: affectedByAnimation ? edgeBandPhase : 'normal',
           flowing: focused && !reducedMotion,
-          suppressFallback:
-            affectedByAnimation && edgeBandPhase !== 'normal',
-          routingRevision,
         },
         style: focused
           ? {
@@ -461,8 +445,8 @@ function App() {
     focusedId,
     movingRank,
     movingTargetId,
+    secondaryMovingTargetId,
     reducedMotion,
-    routingRevision,
   ])
 
   useEffect(() => {
@@ -478,6 +462,17 @@ function App() {
     const id = pendingOpenId
 
     setPendingOpenId(null)
+
+    const switchingFromId = switchingFromIdRef.current
+    if (
+      !USE_SIMPLE_LAYOUT &&
+      switchingFromId !== null &&
+      switchingFromId !== id
+    ) {
+      void switchExpandedCardAnimated(switchingFromId, id, height)
+      return
+    }
+
     void openExpandedCardAnimated(id, height)
   }, [pendingOpenId])
 
@@ -491,61 +486,9 @@ function App() {
     setNodes(nextNodes)
   }
 
-  function finishPendingRoutingWait() {
-    const resolve = routingBatchResolver.current
-    if (resolve === null) return
-
-    routingBatchResolver.current = null
-
-    if (routingBatchTimeout.current !== null) {
-      window.clearTimeout(routingBatchTimeout.current)
-      routingBatchTimeout.current = null
-    }
-
-    resolve()
-  }
-
-  function rerouteToCurrentGeometry(updateRoutingNodes = true) {
-    finishPendingRoutingWait()
-
-    return new Promise<void>((resolve) => {
-      routingBatchResolver.current = resolve
-      routingBatchTimeout.current = window.setTimeout(
-        finishPendingRoutingWait,
-        motionTiming.routingSettleTimeout,
-      )
-
-      minimumRoutingBatchId.current = lastRoutingBatchId.current + 1
-
-      // Routing geometry changes only once, after the visible animation has
-      // finished. The revision tells affected edge hooks to capture their final
-      // endpoint coordinates at the same time, instead of registering every
-      // intermediate animation frame with Smart Edge.
-      setRoutingRevision((current) => current + 1)
-
-      if (updateRoutingNodes) {
-        setRoutingNodes([...nodesRef.current])
-      }
-    })
-  }
-
-  function handleNodesChange(changes: NodeChange<Node>[]) {
-    onNodesChange(changes)
-
-    // Outside expansion/collapse choreography, manual dragging and React Flow
-    // measurements should update routing geometry normally. During motion the
-    // provider stays frozen until rerouteToCurrentGeometry() is called.
-    if (phaseRef.current === 'idle' || phaseRef.current === 'expanded') {
-      const routingChanges = !USE_SIMPLE_LAYOUT && expandedId !== null
-        ? changes.filter(
-            (change) => !('id' in change) || change.id !== expandedId,
-          )
-        : changes
-
-      if (routingChanges.length > 0) {
-        setRoutingNodes((current) => applyNodeChanges(routingChanges, current))
-      }
-    }
+  async function rerouteToCurrentGeometry() {
+    // Built-in React Flow Bézier edges follow visible node geometry directly.
+    await nextFrame()
   }
 
   async function openExpandedCardAnimated(id: string, expandedHeight: number) {
@@ -582,9 +525,9 @@ function App() {
       if (reducedMotion) {
         const visible = setExpandedCard(finalNodes, id, true, expandedHeight)
         commitNodes(visible)
-        setRoutingRevision((current) => current + 1)
         setEdgeBandPhase('normal')
         setMovingTargetId(null)
+        setSecondaryMovingTargetId(null)
         changePhase('expanded')
         return
       }
@@ -603,18 +546,12 @@ function App() {
 
       await nextFrame()
       await nextFrame()
-      // Keep the expanded node's collapsed routing proxy in SmartEdgeProvider.
-      // Only its incident edge endpoints should react to the larger card.
-      await rerouteToCurrentGeometry(false)
+      await rerouteToCurrentGeometry()
       await nextFrame()
 
       changePhase('drawing-edges')
       setEdgeBandPhase('drawing')
-      await sleep(motionTiming.edgeDrawMax)
-      setEdgeBandPhase('normal')
-      setMovingTargetId(null)
 
-      changePhase('revealing-content')
       const visible = setExpandedCard(
         nodesRef.current,
         id,
@@ -622,8 +559,15 @@ function App() {
         expandedHeight,
       )
       commitNodes(visible)
-      await sleep(motionTiming.contentReveal)
 
+      await Promise.all([
+        sleep(motionTiming.edgeDrawMax),
+        sleep(motionTiming.contentReveal),
+      ])
+
+      setEdgeBandPhase('normal')
+      setMovingTargetId(null)
+      setSecondaryMovingTargetId(null)
       changePhase('expanded')
       return
     }
@@ -658,7 +602,6 @@ function App() {
     if (reducedMotion) {
       const visible = setExpandedCard(finalNodes, id, true, expandedHeight)
       commitNodes(visible)
-      setRoutingNodes(visible)
       setEdgeBandPhase('normal')
       setMovingRank(null)
       changePhase('expanded')
@@ -686,11 +629,7 @@ function App() {
 
     changePhase('drawing-edges')
     setEdgeBandPhase('drawing')
-    await sleep(motionTiming.edgeDrawMax)
-    setEdgeBandPhase('normal')
-    setMovingRank(null)
 
-    changePhase('revealing-content')
     const visible = setExpandedCard(
       nodesRef.current,
       id,
@@ -698,8 +637,121 @@ function App() {
       expandedHeight,
     )
     commitNodes(visible)
-    await sleep(motionTiming.contentReveal)
 
+    await Promise.all([
+      sleep(motionTiming.edgeDrawMax),
+      sleep(motionTiming.contentReveal),
+    ])
+
+    setEdgeBandPhase('normal')
+    setMovingRank(null)
+    changePhase('expanded')
+  }
+
+  async function switchExpandedCardAnimated(
+    fromId: string,
+    toId: string,
+    expandedHeight: number,
+  ) {
+    if (phaseRef.current !== 'measuring') return
+    if (USE_SIMPLE_LAYOUT) return
+
+    const fromSnapshot = manualPositionSnapshot.current
+    const current = nodesRef.current
+    const fromNode = current.find((node) => node.id === fromId)
+    const toNode = current.find((node) => node.id === toId)
+
+    if (
+      fromSnapshot === null ||
+      fromSnapshot.id !== fromId ||
+      fromNode === undefined ||
+      toNode === undefined
+    ) {
+      switchingFromIdRef.current = null
+      changePhase('expanded')
+      return
+    }
+
+    const fromExpandedHeight = typeof fromNode.style?.height === 'number'
+      ? fromNode.style.height
+      : NODE_HEIGHT
+    const toSnapshot: ManualPositionSnapshot = {
+      id: toId,
+      position: { ...toNode.position },
+    }
+
+    const focusedStart = setFocusRoles(current, toId)
+    const contentHidden = setExpandedCard(
+      focusedStart,
+      fromId,
+      false,
+      fromExpandedHeight,
+    )
+
+    let finalNodes = restoreManualPosition(contentHidden, fromSnapshot)
+    finalNodes = setExpandedCard(finalNodes, toId, false, expandedHeight)
+    finalNodes = centerExpandedCardToSize(
+      finalNodes,
+      toId,
+      toSnapshot.position,
+      expandedHeight,
+    )
+
+    if (reducedMotion) {
+      const visible = setExpandedCard(finalNodes, toId, true, expandedHeight)
+      commitNodes(visible)
+      manualPositionSnapshot.current = toSnapshot
+      switchingFromIdRef.current = null
+      setExpandedId(toId)
+      setMovingTargetId(null)
+      setSecondaryMovingTargetId(null)
+      setEdgeBandPhase('normal')
+      changePhase('expanded')
+      return
+    }
+
+    commitNodes(contentHidden)
+    setExpandedId(toId)
+    setMovingTargetId(fromId)
+    setSecondaryMovingTargetId(toId)
+    setEdgeBandPhase('hidden')
+    await sleep(motionTiming.edgeFade)
+
+    changePhase('moving')
+    await animateNodes(
+      contentHidden,
+      finalNodes,
+      motionTiming.layout,
+      commitNodes,
+    )
+
+    await nextFrame()
+    await nextFrame()
+    await rerouteToCurrentGeometry()
+    await nextFrame()
+
+    changePhase('drawing-edges')
+    setEdgeBandPhase('drawing')
+
+    const visible = setExpandedCard(
+      nodesRef.current,
+      toId,
+      true,
+      expandedHeight,
+    )
+    commitNodes(visible)
+
+    await Promise.all([
+      sleep(motionTiming.edgeDrawMax),
+      sleep(motionTiming.contentReveal),
+    ])
+
+    setEdgeBandPhase('normal')
+    setMovingTargetId(null)
+    setSecondaryMovingTargetId(null)
+
+    manualPositionSnapshot.current = toSnapshot
+    switchingFromIdRef.current = null
     changePhase('expanded')
   }
 
@@ -722,10 +774,10 @@ function App() {
         const restored = restoreManualPosition(nodesRef.current, snapshot)
         const collapsed = setExpandedCard(restored, null, false)
         commitNodes(collapsed)
-        setRoutingNodes(collapsed)
         manualPositionSnapshot.current = null
         setExpandedId(null)
         setMovingTargetId(null)
+        setSecondaryMovingTargetId(null)
         setEdgeBandPhase('normal')
         changePhase('idle')
         return
@@ -765,6 +817,7 @@ function App() {
 
       setEdgeBandPhase('normal')
       setMovingTargetId(null)
+      setSecondaryMovingTargetId(null)
       manualPositionSnapshot.current = null
       setExpandedId(null)
       changePhase('idle')
@@ -786,7 +839,6 @@ function App() {
       const restored = restoreRankPositions(nodesRef.current, snapshot)
       const collapsed = setExpandedCard(restored, null, false)
       commitNodes(collapsed)
-      setRoutingNodes(collapsed)
       rankSnapshot.current = null
       setExpandedId(null)
       setMovingRank(null)
@@ -837,6 +889,7 @@ function App() {
   function requestOpen(id: string) {
     if (phaseRef.current !== 'idle') return
 
+    switchingFromIdRef.current = null
     setExpandedId(id)
     changePhase('measuring')
     setPendingOpenId(id)
@@ -846,6 +899,13 @@ function App() {
     if (phaseRef.current === 'expanded') {
       if (id === expandedId) {
         await closeExpandedCardAnimated()
+        return
+      }
+
+      if (!USE_SIMPLE_LAYOUT && expandedId !== null) {
+        switchingFromIdRef.current = expandedId
+        changePhase('measuring')
+        setPendingOpenId(id)
         return
       }
 
@@ -950,26 +1010,10 @@ function App() {
         </div>
       )}
 
-      <SmartEdgeProvider
-        nodes={routingNodes}
-        onMetrics={(metrics) => {
-          lastRoutingBatchId.current = Math.max(
-            lastRoutingBatchId.current,
-            metrics.batchId,
-          )
-
-          if (
-            metrics.batchId >= minimumRoutingBatchId.current &&
-            metrics.deferred === 0
-          ) {
-            finishPendingRoutingWait()
-          }
-        }}
-      >
         <ReactFlow
           nodes={nodes}
           edges={edges}
-          onNodesChange={handleNodesChange}
+          onNodesChange={onNodesChange}
           nodeExtent={graphViewport.extent}
           translateExtent={graphViewport.extent}
           minZoom={graphViewport.minZoom}
@@ -998,7 +1042,6 @@ function App() {
           proOptions={{ hideAttribution: true }}
           fitView
         />
-      </SmartEdgeProvider>
       </div>
     </div>
   )
